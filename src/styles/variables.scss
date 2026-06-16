@@ -1,0 +1,41 @@
+:root {
+  --app-color-primary: #2563eb;
+  --app-color-primary-light: #eff6ff;
+  --app-color-primary-dark: #1d4ed8;
+  --app-color-accent: #7c3aed;
+  --app-color-success: #16a34a;
+  --app-color-warning: #ea580c;
+  --app-color-danger: #dc2626;
+  --app-color-info: #0891b2;
+  --app-bg-page: #f5f6fa;
+  --app-bg-card: #ffffff;
+  --app-bg-muted: #f8fafc;
+  --app-border-color: #e2e8f0;
+  --app-border-color-light: #f1f5f9;
+  --app-text-primary: #1e293b;
+  --app-text-regular: #475569;
+  --app-text-secondary: #64748b;
+  --app-text-placeholder: #94a3b8;
+  --app-sidebar-bg: #0f172a;
+  --app-sidebar-hover: #1e293b;
+  --app-sidebar-active: #2563eb;
+  --app-sidebar-width: 248px;
+  --app-page-padding: 28px 32px;
+  --app-page-gap: 20px;
+  --app-radius-base: 10px;
+  --app-radius-card: 14px;
+  --app-shadow-base: 0 1px 2px 0 rgb(15 23 42 / 4%);
+  --app-shadow-card: 0 4px 6px -1px rgb(15 23 42 / 6%), 0 2px 4px -2px rgb(15 23 42 / 4%);
+  --app-gradient-brand: linear-gradient(135deg, #2563eb, #7c3aed);
+  --el-color-primary: var(--app-color-primary);
+  --el-border-radius-base: 8px;
+}
+
+$app-color-primary: #2563eb;
+$app-color-success: #16a34a;
+$app-color-warning: #ea580c;
+$app-color-danger: #dc2626;
+$app-color-info: #0891b2;
+$app-page-bg: #f5f6fa;
+$app-card-bg: #ffffff;
+$app-border-color: #e2e8f0;
