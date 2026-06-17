@@ -17,6 +17,15 @@ const routes: RouteRecordRaw[] = [
         },
       },
       {
+        path: 'scene/:sceneId/params',
+        name: 'SceneParams',
+        component: () => import('../views/scene/params/SceneParamView.vue'),
+        meta: {
+          title: '场景参数管理',
+          description: '场景参数管理功能开发中',
+        },
+      },
+      {
         path: 'channel',
         name: 'Channel',
         component: () => import('../views/channel/ChannelView.vue'),

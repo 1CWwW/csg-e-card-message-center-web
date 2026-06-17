@@ -2,7 +2,7 @@ import axios, { AxiosError, type AxiosInstance, type AxiosResponse } from 'axios
 import { ElMessage } from 'element-plus'
 import type { ApiErrorPayload, ApiResponse } from '../types/api'
 
-const defaultDevBaseUrl = 'http://localhost:8080'
+const defaultDevBaseUrl = '/message-center'
 
 const service: AxiosInstance = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL || (import.meta.env.DEV ? defaultDevBaseUrl : ''),
@@ -22,7 +22,13 @@ const getResponseMessage = (payload: ApiResponse<unknown> | ApiErrorPayload) => 
 }
 
 const isBusinessSuccess = (payload: ApiResponse<unknown>) => {
-  return payload.success === true || payload.code === 0 || payload.code === '0' || payload.code === 200
+  return (
+    payload.success === true ||
+    payload.code === '00000' ||
+    payload.code === 0 ||
+    payload.code === '0' ||
+    payload.code === 200
+  )
 }
 
 const getErrorMessage = (error: AxiosError<ApiErrorPayload | ApiResponse<unknown>>) => {

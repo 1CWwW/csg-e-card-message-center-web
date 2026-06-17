@@ -7,6 +7,10 @@ import { menuItems } from '../../router/menu'
 const route = useRoute()
 
 const activeMenu = computed(() => {
+  if (route.path.startsWith('/scene/')) {
+    return '/scene'
+  }
+
   const matchedMenu = menuItems.find((item) => item.path === route.path)
   return matchedMenu?.path ?? ''
 })
