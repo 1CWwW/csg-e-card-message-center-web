@@ -44,6 +44,15 @@ const routes: RouteRecordRaw[] = [
         },
       },
       {
+        path: 'template/:templateId/editor',
+        name: 'TemplateEditor',
+        component: () => import('../views/template/TemplateEditorView.vue'),
+        meta: {
+          title: '模板内容编辑',
+          description: '消息模板内容编辑入口',
+        },
+      },
+      {
         path: 'push',
         name: 'Push',
         component: () => import('../views/push/PushView.vue'),

@@ -8,10 +8,12 @@ const props = withDefaults(
     modelValue: number
     disabled?: boolean
     loading?: boolean
+    showText?: boolean
   }>(),
   {
     disabled: false,
     loading: false,
+    showText: true,
   },
 )
 
@@ -38,7 +40,7 @@ const handleChange = (value: string | number | boolean) => {
       :loading="loading"
       @update:model-value="handleChange"
     />
-    <span class="status-switch__text">{{ statusText }}</span>
+    <span v-if="showText" class="status-switch__text">{{ statusText }}</span>
   </span>
 </template>
 
