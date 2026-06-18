@@ -10,6 +10,7 @@ import {
   type SceneStatus,
   type SceneUpdateForm,
 } from '../../../types/scene'
+import StatusSwitch from '../../../components/business/StatusSwitch.vue'
 
 type DialogMode = 'create' | 'edit'
 type CodeCheckStatus = 'unchecked' | 'checking' | 'passed' | 'failed' | 'error'
@@ -96,7 +97,7 @@ const fillEditForm = (scene: SceneItem) => {
   formModel.sceneName = scene.sceneName
   formModel.module = scene.module as SceneModuleCode
   formModel.description = scene.description || ''
-  formModel.status = scene.status
+  formModel.status = scene.status ?? 1
   resetCodeCheck()
 
   nextTick(() => {
@@ -311,11 +312,8 @@ const submitForm = async () => {
             placeholder="请输入场景描述"
           />
         </el-form-item>
-        <el-form-item label="启用状态" prop="status">
-          <el-radio-group v-model="formModel.status">
-            <el-radio-button :label="1">启用</el-radio-button>
-            <el-radio-button :label="0">停用</el-radio-button>
-          </el-radio-group>
+        <el-form-item label="状态" prop="status">
+          <StatusSwitch v-model="formModel.status" />
         </el-form-item>
       </el-form>
     </div>
