@@ -89,6 +89,7 @@ watch(
 <template>
   <el-dialog
     :model-value="modelValue"
+    class="template-reference-dialog-shell"
     title="参考模板"
     width="820px"
     destroy-on-close
@@ -150,5 +151,42 @@ watch(
 <style scoped lang="scss">
 .template-reference-dialog__alert {
   margin-bottom: 14px;
+}
+
+:global(.template-reference-dialog-shell) {
+  border-radius: 14px;
+  box-shadow: 0 12px 36px rgb(31 45 61 / 14%);
+}
+
+:global(.template-reference-dialog-shell .el-dialog__header) {
+  margin-right: 0;
+  padding: 18px 22px 15px;
+  border-bottom: 1px solid #e8edf4;
+}
+
+:global(.template-reference-dialog-shell .el-dialog__title) {
+  color: #172033;
+  font-size: 17px;
+  font-weight: 600;
+}
+
+:global(.template-reference-dialog-shell .el-dialog__body) {
+  padding: 18px 22px 22px;
+}
+
+:global(.template-reference-dialog-shell .el-table) {
+  --el-table-header-bg-color: #f8fafc;
+  --el-table-header-text-color: #65748a;
+  --el-table-row-hover-bg-color: #f6f9ff;
+  border-radius: 10px;
+}
+
+:global(.template-reference-dialog-shell .el-table th.el-table__cell) {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+:global(.template-reference-dialog-shell .el-table td.el-table__cell) {
+  font-size: 13px;
 }
 </style>

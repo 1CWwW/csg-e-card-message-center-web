@@ -191,6 +191,7 @@ watch(
 <template>
   <el-dialog
     :model-value="modelValue"
+    class="template-preview-dialog-shell"
     title="正文预览"
     width="760px"
     top="5vh"
@@ -390,5 +391,39 @@ watch(
 
 .template-preview-dialog :deep(.el-empty) {
   padding: 10px 0;
+}
+
+:global(.template-preview-dialog-shell) {
+  border-radius: 14px;
+  box-shadow: 0 12px 36px rgb(31 45 61 / 14%);
+}
+
+:global(.template-preview-dialog-shell .el-dialog__header) {
+  margin-right: 0;
+  padding: 18px 22px 15px;
+  border-bottom: 1px solid #e8edf4;
+}
+
+:global(.template-preview-dialog-shell .el-dialog__title) {
+  color: #172033;
+  font-size: 17px;
+  font-weight: 600;
+}
+
+:global(.template-preview-dialog-shell .el-dialog__body) {
+  padding: 18px 22px 22px;
+}
+
+:global(.template-preview-dialog-shell .el-input__wrapper),
+:global(.template-preview-dialog-shell .el-select__wrapper),
+:global(.template-preview-dialog-shell .el-textarea__inner) {
+  border-radius: 8px;
+  box-shadow: 0 0 0 1px #dce3ed inset;
+}
+
+:global(.template-preview-dialog-shell .el-button--primary) {
+  border: none;
+  border-radius: 8px;
+  background: linear-gradient(135deg, #4169ef, #7547ef);
 }
 </style>

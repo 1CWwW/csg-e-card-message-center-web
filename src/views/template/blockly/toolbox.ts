@@ -40,24 +40,36 @@ export const buildTemplateToolbox = (
         kind: 'category',
         name: '模板结构',
         colour: '#4f6bed',
+        cssconfig: {
+          row: 'blocklyToolboxCategory template-toolbox-category template-toolbox-category--structure',
+        },
         contents: [block('message_content')],
       },
       {
         kind: 'category',
-        name: '文本',
-        colour: '#5b67a5',
-        contents: [block('text'), block('text_join')],
-      },
-      {
-        kind: 'category',
         name: '场景参数',
-        colour: '#4fa58b',
+        colour: '#5ba58c',
+        cssconfig: {
+          row: 'blocklyToolboxCategory template-toolbox-category template-toolbox-category--params',
+        },
         contents: sceneParamBlocks,
       },
       {
         kind: 'category',
+        name: '文本',
+        colour: '#3f7bf3',
+        cssconfig: {
+          row: 'blocklyToolboxCategory template-toolbox-category template-toolbox-category--text',
+        },
+        contents: [block('text'), block('text_join')],
+      },
+      {
+        kind: 'category',
         name: '格式化',
-        colour: '#d18b35',
+        colour: '#e8a110',
+        cssconfig: {
+          row: 'blocklyToolboxCategory template-toolbox-category template-toolbox-category--format',
+        },
         contents: [block('amount_format'), block('time_format')],
       },
     ],
