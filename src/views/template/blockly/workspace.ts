@@ -4,6 +4,7 @@ import type {
   BlocklyWorkspaceState,
   TemplateBlocklyDocument,
 } from '../../../types/template'
+import { registerTemplateCardRenderer } from './cardRenderer'
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -113,8 +114,9 @@ export const createTemplateWorkspace = (
   container: HTMLElement,
   changeListener: (event: Blockly.Events.Abstract) => void,
 ) => {
+  const renderer = registerTemplateCardRenderer()
   const workspace = Blockly.inject(container, {
-    renderer: 'zelos',
+    renderer,
     theme: templateEditorTheme,
     trashcan: true,
     move: {
@@ -125,7 +127,7 @@ export const createTemplateWorkspace = (
     zoom: {
       controls: false,
       wheel: true,
-      startScale: 0.9,
+      startScale: 1,
       maxScale: 2,
       minScale: 0.5,
       scaleSpeed: 1.1,

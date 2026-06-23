@@ -41,6 +41,7 @@ import {
   resizeTemplateWorkspace,
   saveTemplateWorkspace,
 } from './blockly/workspace'
+import { TemplateConnectionOverlay } from './blockly/connectionOverlay'
 
 const route = useRoute()
 const router = useRouter()
@@ -55,9 +56,10 @@ const saveErrors = ref<string[]>([])
 const referenceDialogVisible = ref(false)
 const previewDialogVisible = ref(false)
 const previewWorkspace = ref<BlocklyWorkspaceState>({})
-const workspaceScale = ref(90)
+const workspaceScale = ref(100)
 const hasWorkspaceBlocks = ref(false)
 let workspace: Blockly.WorkspaceSvg | null = null
+let connectionOverlay: TemplateConnectionOverlay | null = null
 let restoringWorkspace = false
 let leaveConfirmPromise: Promise<boolean> | null = null
 let originalBodyOverflow = ''
@@ -92,6 +94,7 @@ const refreshWorkspaceState = () => {
 
 const handleWorkspaceChange = (event: Blockly.Events.Abstract) => {
   refreshWorkspaceState()
+  connectionOverlay?.scheduleRender()
 
   if (restoringWorkspace || event.isUiEvent) {
     return
@@ -127,6 +130,7 @@ const initializeWorkspace = async () => {
     workspaceContainer.value,
     handleWorkspaceChange,
   )
+  connectionOverlay = new TemplateConnectionOverlay(workspace)
 
   const document = parseBlocklyDocument(templateDetail.value?.blocklyJson)
 
@@ -140,6 +144,7 @@ const initializeWorkspace = async () => {
   dirty.value = false
   refreshWorkspaceState()
   resizeTemplateWorkspace(workspace)
+  connectionOverlay.scheduleRender()
 }
 
 const loadEditor = async () => {
@@ -152,6 +157,8 @@ const loadEditor = async () => {
   loadFailed.value = false
   saveErrors.value = []
   disposeTemplateWorkspace(workspace, handleWorkspaceChange)
+  connectionOverlay?.dispose()
+  connectionOverlay = null
   workspace = null
 
   try {
@@ -324,6 +331,7 @@ const zoomWorkspace = (direction: 1 | -1) => {
 
   if (workspace) {
     workspaceScale.value = Math.round(workspace.getScale() * 100)
+    connectionOverlay?.scheduleRender()
   }
 }
 
@@ -332,6 +340,7 @@ const centerWorkspace = () => {
 
   if (workspace) {
     workspaceScale.value = Math.round(workspace.getScale() * 100)
+    connectionOverlay?.scheduleRender()
   }
 }
 
@@ -400,7 +409,10 @@ const returnToList = () => {
   router.push('/template')
 }
 
-const handleResize = () => resizeTemplateWorkspace(workspace)
+const handleResize = () => {
+  resizeTemplateWorkspace(workspace)
+  connectionOverlay?.scheduleRender()
+}
 const handleBeforeUnload = (event: BeforeUnloadEvent) => {
   if (!dirty.value) {
     return
@@ -434,6 +446,8 @@ onBeforeUnmount(() => {
   window.removeEventListener('beforeunload', handleBeforeUnload)
   window.removeEventListener('keydown', handleShortcut)
   disposeTemplateWorkspace(workspace, handleWorkspaceChange)
+  connectionOverlay?.dispose()
+  connectionOverlay = null
   workspace = null
 })
 </script>
@@ -486,7 +500,7 @@ onBeforeUnmount(() => {
             class="template-editor-page__save"
             type="primary"
             :loading="saving"
-            :disabled="loading || loadFailed || !workspace"
+            :disabled="loading || loadFailed || !workspace || !dirty"
             @click="saveContent"
           >
             保存
@@ -942,9 +956,9 @@ onBeforeUnmount(() => {
     filter: drop-shadow(0 2px 3px rgb(40 55 85 / 8%));
   }
 
-  :deep(.blocklySelected > .blocklyPath.blocklyPathSelected) {
+  :deep(.blocklySelected > .template-block-card) {
     stroke: #3568d4;
-    stroke-width: 2px;
+    filter: drop-shadow(0 0 4px rgb(53 104 212 / 28%));
   }
 
   :deep(.blocklyScrollbarHandle) {
@@ -967,21 +981,34 @@ onBeforeUnmount(() => {
     stroke-width: 1px;
   }
 
-  :deep(.text.blocklyBlock > .blocklyPath) {
+  :deep(.blocklyBlock > .blocklyPath),
+  :deep(.blocklyBlock > .blocklyOutlinePath),
+  :deep(.blocklyBlock > .blocklyPathSelected) {
+    fill: transparent !important;
+    stroke: transparent !important;
+    filter: none !important;
+  }
+
+  :deep(.template-block-card) {
     fill: #ffffff;
-    stroke: #3f7bf3;
+    stroke: var(--template-block-border, #64748b);
     stroke-width: 2px;
+    vector-effect: non-scaling-stroke;
+    pointer-events: none;
+  }
+
+  :deep(.blocklyBlock .blocklyFieldText) {
+    fill: #26324a !important;
+    stroke: none !important;
+    paint-order: normal !important;
+    font-size: 12px;
+    font-weight: 500;
   }
 
   :deep(.text.blocklyBlock .blocklyLabelField .blocklyFieldText) {
     fill: #3f7bf3;
     font-size: 13px;
     font-weight: 700;
-    paint-order: stroke fill;
-    stroke: #eef4ff;
-    stroke-width: 12px;
-    stroke-linecap: round;
-    stroke-linejoin: round;
   }
 
   :deep(.text.blocklyBlock .blocklyTextInputField .blocklyFieldRect) {
@@ -992,7 +1019,7 @@ onBeforeUnmount(() => {
   }
 
   :deep(.text.blocklyBlock .blocklyTextInputField .blocklyFieldText) {
-    fill: #26324a;
+    fill: #26324a !important;
     font-size: 14px;
     font-weight: 500;
   }
@@ -1058,9 +1085,8 @@ onBeforeUnmount(() => {
       ).blocklyBlock
       > .blocklyPath
   ) {
-    fill: #ffffff;
-    stroke: var(--template-block-colour);
-    stroke-width: 2px;
+    fill: transparent !important;
+    stroke: transparent !important;
   }
 
   :deep(
@@ -1082,9 +1108,8 @@ onBeforeUnmount(() => {
       ).blocklyBlock
       > .blocklyOutlinePath
   ) {
-    fill: #ffffff;
-    stroke: var(--template-block-colour);
-    stroke-width: 2px;
+    fill: transparent !important;
+    stroke: transparent !important;
   }
 
   :deep(
@@ -1107,13 +1132,10 @@ onBeforeUnmount(() => {
       :is(.blocklyLabelField, .blocklyDropdownField)
       .blocklyFieldText
   ) {
-    fill: var(--template-block-colour);
+    fill: #26324a !important;
     font-weight: 700;
-    paint-order: stroke fill;
-    stroke: var(--template-block-tint);
-    stroke-width: 10px;
-    stroke-linecap: round;
-    stroke-linejoin: round;
+    stroke: none !important;
+    paint-order: normal;
   }
 
   :deep(
@@ -1139,11 +1161,60 @@ onBeforeUnmount(() => {
     stroke: #d5ddea;
   }
 
+  :deep(.template-connection-lines),
+  :deep(.template-connection-ports) {
+    pointer-events: none;
+  }
+
+  :deep(.template-connection-line) {
+    fill: none;
+    stroke: #94a3b8;
+    stroke-width: 2px;
+    vector-effect: non-scaling-stroke;
+  }
+
+  :deep(.template-connection-port) {
+    fill: #ffffff;
+    stroke: var(--connection-colour, #64748b);
+    stroke-width: 2px;
+    vector-effect: non-scaling-stroke;
+  }
+
+  :deep(.template-connection-port.is-connected) {
+    fill: #3568d4;
+    stroke: #3568d4;
+  }
+
+  :deep(.blocklyConnectionIndicator) {
+    stroke: #3568d4;
+  }
+
+  :deep(.blocklyDropdownText) {
+    fill: #26324a !important;
+  }
+
+}
+
+:global(.blocklyWidgetDiv) {
+  background: transparent !important;
 }
 
 :global(.blocklyWidgetDiv .blocklyHtmlInput) {
-  box-sizing: content-box;
-  min-width: 1px;
+  box-sizing: border-box;
+  min-width: 60px;
+  max-width: 240px;
+  color: #26324a !important;
+  border: 0;
+  border-bottom: 1px dashed #94a3b8;
+  border-radius: 0;
+  background: #ffffff !important;
+  outline: none;
+  font: 500 13px/1.5 "Microsoft YaHei", "PingFang SC", sans-serif;
+}
+
+:global(.blocklyWidgetDiv .blocklyHtmlInput:focus) {
+  border-bottom-color: #3568d4;
+  box-shadow: 0 1px 0 #3568d4;
 }
 
 :global(.blocklyWidgetDiv),

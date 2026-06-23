@@ -41,8 +41,17 @@ interface LoopItemBlock extends Blockly.Block {
 class TemplateTextInput extends Blockly.FieldTextInput {
   override getSize() {
     const size = super.getSize()
-    size.width = Math.max(size.width, 300)
+    size.width = Math.min(220, Math.max(size.width, 72))
     return size
+  }
+
+  protected override widgetCreate_() {
+    const input = super.widgetCreate_()
+    input.classList.add('template-block-text-input')
+    ;['pointerdown', 'mousedown', 'click', 'keydown'].forEach((eventName) => {
+      input.addEventListener(eventName, (event) => event.stopPropagation())
+    })
+    return input
   }
 }
 
