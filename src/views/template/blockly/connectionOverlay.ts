@@ -14,6 +14,22 @@ const createSvgElement = <K extends keyof SVGElementTagNameMap>(
 const getConnectionPoint = (connection: Blockly.RenderedConnection) => {
   const block = connection.getSourceBlock()
   const blockPosition = block.getRelativeToSurfaceXY()
+  const size = block.getHeightWidth()
+
+  if (connection.type === Blockly.ConnectionType.PREVIOUS_STATEMENT) {
+    return {
+      x: blockPosition.x,
+      y: blockPosition.y + size.height / 2,
+    }
+  }
+
+  if (connection.type === Blockly.ConnectionType.NEXT_STATEMENT) {
+    return {
+      x: blockPosition.x + size.width,
+      y: blockPosition.y + size.height / 2,
+    }
+  }
+
   const offset = connection.getOffsetInBlock()
   return {
     x: blockPosition.x + offset.x,
@@ -29,6 +45,7 @@ export class TemplateConnectionOverlay {
   private readonly lineLayer: SVGGElement
   private readonly portLayer: SVGGElement
   private animationFrame = 0
+  private pendingBlock: Blockly.BlockSvg | null = null
 
   constructor(workspace: Blockly.WorkspaceSvg) {
     this.workspace = workspace
@@ -73,8 +90,8 @@ export class TemplateConnectionOverlay {
       .flatMap((block) => block.getConnections_(true))
       .filter(
         (connection) =>
-          connection.type === Blockly.ConnectionType.INPUT_VALUE ||
-          connection.type === Blockly.ConnectionType.OUTPUT_VALUE,
+          connection.type === Blockly.ConnectionType.PREVIOUS_STATEMENT ||
+          connection.type === Blockly.ConnectionType.NEXT_STATEMENT,
       )
 
     const renderedPairs = new Set<string>()
@@ -86,9 +103,21 @@ export class TemplateConnectionOverlay {
       port.setAttribute('cy', String(point.y))
       port.setAttribute('r', '5')
       port.style.setProperty('--connection-colour', getConnectionColour(connection))
+      port.addEventListener('pointerdown', (event) => {
+        event.preventDefault()
+        event.stopPropagation()
+      })
+      port.addEventListener('click', (event) => {
+        event.preventDefault()
+        event.stopPropagation()
+        this.handleConnectionClick(connection)
+      })
 
       if (connection.isConnected()) {
         port.classList.add('is-connected')
+      }
+      if (connection.getSourceBlock() === this.pendingBlock) {
+        port.classList.add('is-pending')
       }
 
       this.portLayer.appendChild(port)
@@ -116,6 +145,35 @@ export class TemplateConnectionOverlay {
       )
       this.lineLayer.appendChild(path)
     })
+  }
+
+  private handleConnectionClick(connection: Blockly.RenderedConnection) {
+    const clickedBlock = connection.getSourceBlock()
+
+    if (!this.pendingBlock) {
+      this.pendingBlock = clickedBlock
+      this.scheduleRender()
+      return
+    }
+
+    const sourceBlock = this.pendingBlock
+    this.pendingBlock = null
+
+    if (sourceBlock === clickedBlock) {
+      this.scheduleRender()
+      return
+    }
+
+    const source = sourceBlock.nextConnection
+    const target = clickedBlock.previousConnection
+
+    if (source && target && source.getConnectionChecker().canConnect(source, target, false)) {
+      source.targetConnection?.disconnect()
+      target.targetConnection?.disconnect()
+      source.connect(target)
+    }
+
+    this.scheduleRender()
   }
 
   dispose() {

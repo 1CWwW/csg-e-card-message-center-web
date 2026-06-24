@@ -1011,17 +1011,27 @@ onBeforeUnmount(() => {
     font-weight: 700;
   }
 
-  :deep(.text.blocklyBlock .blocklyTextInputField .blocklyFieldRect) {
-    fill: #ffffff;
-    stroke: #94a3b8;
-    stroke-width: 1px;
-    stroke-dasharray: 4 3;
+  :deep(.blocklyTextInputField .blocklyFieldRect) {
+    fill: transparent;
+    stroke: none;
   }
 
-  :deep(.text.blocklyBlock .blocklyTextInputField .blocklyFieldText) {
+  :deep(.blocklyTextInputField .blocklyFieldText) {
     fill: #26324a !important;
     font-size: 14px;
     font-weight: 500;
+  }
+
+  :deep(.template-field-underline) {
+    stroke: #94a3b8;
+    stroke-width: 1px;
+    stroke-dasharray: 4 3;
+    pointer-events: none;
+  }
+
+  :deep(.blocklyEditing .template-field-underline) {
+    stroke: #3568d4;
+    stroke-width: 2px;
   }
 
   :deep(.message_content.blocklyBlock),
@@ -1162,7 +1172,7 @@ onBeforeUnmount(() => {
   }
 
   :deep(.template-connection-lines),
-  :deep(.template-connection-ports) {
+  :deep(.template-connection-lines) {
     pointer-events: none;
   }
 
@@ -1178,6 +1188,16 @@ onBeforeUnmount(() => {
     stroke: var(--connection-colour, #64748b);
     stroke-width: 2px;
     vector-effect: non-scaling-stroke;
+    cursor: crosshair;
+    pointer-events: all;
+    transition: r 0.12s ease, fill 0.12s ease, stroke 0.12s ease;
+  }
+
+  :deep(.template-connection-port:hover),
+  :deep(.template-connection-port.is-pending) {
+    r: 7px;
+    fill: #3568d4;
+    stroke: #3568d4;
   }
 
   :deep(.template-connection-port.is-connected) {

@@ -14,7 +14,10 @@ const getRequiredData = <T>(response: AxiosResponse<ApiResponse<T>>) => {
 export const pushMessageSync = async (payload: PushRequest) => {
   const response = await request.post<ApiResponse<SyncPushResult>>(
     '/api/message-center/push/sync',
-    payload,
+    {
+      ...payload,
+      priority: payload.priority ?? 'NORMAL',
+    },
   )
 
   return getRequiredData(response)
@@ -23,7 +26,10 @@ export const pushMessageSync = async (payload: PushRequest) => {
 export const pushMessageAsync = async (payload: PushRequest) => {
   const response = await request.post<ApiResponse<AsyncPushResult>>(
     '/api/message-center/push/async',
-    payload,
+    {
+      ...payload,
+      priority: payload.priority ?? 'NORMAL',
+    },
   )
 
   return getRequiredData(response)

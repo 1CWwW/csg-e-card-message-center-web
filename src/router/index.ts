@@ -66,8 +66,8 @@ const routes: RouteRecordRaw[] = [
         name: 'Record',
         component: () => import('../views/record/RecordView.vue'),
         meta: {
-          title: '消息记录查询',
-          description: '查询消息发送记录的基础入口',
+          title: '消息记录',
+          description: '查询消息推送的完整历史记录，支持多维度筛选',
         },
       },
       {

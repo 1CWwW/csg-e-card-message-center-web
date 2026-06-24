@@ -39,9 +39,27 @@ interface LoopItemBlock extends Blockly.Block {
 }
 
 class TemplateTextInput extends Blockly.FieldTextInput {
+  private underline: SVGLineElement | null = null
+
+  override initView() {
+    super.initView()
+    const root = this.getSvgRoot()
+    if (!root) {
+      return
+    }
+
+    this.underline = document.createElementNS('http://www.w3.org/2000/svg', 'line')
+    this.underline.setAttribute('class', 'template-field-underline')
+    this.underline.setAttribute('x1', '4')
+    this.underline.setAttribute('y1', '23')
+    this.underline.setAttribute('y2', '23')
+    root.appendChild(this.underline)
+  }
+
   override getSize() {
     const size = super.getSize()
     size.width = Math.min(220, Math.max(size.width, 72))
+    this.underline?.setAttribute('x2', String(Math.max(8, size.width - 4)))
     return size
   }
 
@@ -53,6 +71,20 @@ class TemplateTextInput extends Blockly.FieldTextInput {
     })
     return input
   }
+}
+
+const decimalValidator = (value: string) => {
+  const normalized = value.trim()
+  if (!/^\d$/.test(normalized)) {
+    return null
+  }
+
+  const decimals = Number(normalized)
+  return decimals >= 0 && decimals <= 6 ? normalized : null
+}
+
+interface TextJoinBlock extends Blockly.Block {
+  updateShape_(): void
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -68,6 +100,7 @@ const readLoopItemType = (value: unknown): LoopItemType =>
   value === 'NUMBER' ? 'NUMBER' : 'STRING'
 
 const CONTROLS_IF_MAX_ELSEIF = 10
+const TEMPLATE_CHAIN_CHECK = 'TemplateContentChain'
 
 const getSceneParamColour = (paramType: string) => {
   if (paramType === 'NUMBER') {
@@ -382,6 +415,59 @@ export const registerTemplateBlocks = () => {
       enableContextMenu: false,
     },
   ])
+
+  const textJoinDefinition = Blockly.Blocks.text_join
+  if (textJoinDefinition) {
+    const originalInit = textJoinDefinition.init
+    textJoinDefinition.init = function (this: TextJoinBlock) {
+      originalInit.call(this)
+      const originalUpdateShape = this.updateShape_.bind(this)
+      const decorateEmptyInput = () => {
+        const input = this.getInput('EMPTY')
+        if (input && !this.getField('TEXT')) {
+          input
+            .appendField('拼接')
+            .appendField(new TemplateTextInput(''), 'TEXT')
+        }
+      }
+
+      this.updateShape_ = () => {
+        originalUpdateShape()
+        decorateEmptyInput()
+      }
+      decorateEmptyInput()
+    }
+  }
+
+  Blockly.Blocks.amount_format = {
+    init() {
+      this.appendDummyInput()
+        .appendField('金额')
+        .appendField('格式化（小数位：')
+        .appendField(new TemplateTextInput('2', decimalValidator), 'DECIMALS')
+        .appendField('）')
+      this.appendValueInput('VALUE').setCheck('Number')
+      this.setInputsInline(true)
+      this.setOutput(true, 'String')
+      this.setStyle('format_blocks')
+      this.setTooltip('将金额参数格式化为文本，小数位只允许 0 至 6')
+    },
+  }
+
+  Blockly.Blocks.time_format = {
+    init() {
+      this.appendDummyInput()
+        .appendField('时间')
+        .appendField('格式化（格式：')
+        .appendField(new TemplateTextInput('yyyy-MM-dd HH:mm'), 'FORMAT')
+        .appendField('）')
+      this.appendValueInput('VALUE').setCheck(['String', 'Time'])
+      this.setInputsInline(true)
+      this.setOutput(true, 'String')
+      this.setStyle('format_blocks')
+      this.setTooltip('将时间参数按指定格式转换为文本')
+    },
+  }
 
   Blockly.Blocks.scene_param_value = {
     init(this: SceneParamBlock) {
@@ -707,6 +793,39 @@ export const registerTemplateBlocks = () => {
       this.updateShape_()
     },
   }
+
+  const chainBlockTypes = [
+    'message_content',
+    'scene_param_value',
+    'text',
+    'text_join',
+    'amount_format',
+    'time_format',
+    'math_arithmetic',
+    'math_modulo',
+    'logic_compare',
+    'logic_operation',
+    'logic_negate',
+    'string_contains',
+    'string_like',
+    'controls_forEach',
+    'loop_item_value',
+    'controls_if',
+  ]
+
+  chainBlockTypes.forEach((type) => {
+    const definition = Blockly.Blocks[type]
+    if (!definition?.init) {
+      return
+    }
+
+    const originalInit = definition.init
+    definition.init = function (this: Blockly.Block) {
+      originalInit.call(this)
+      this.setPreviousStatement(true, TEMPLATE_CHAIN_CHECK)
+      this.setNextStatement(true, TEMPLATE_CHAIN_CHECK)
+    }
+  })
 
   registered = true
 }
