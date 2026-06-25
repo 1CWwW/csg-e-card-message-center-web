@@ -10,6 +10,8 @@ const props = withDefaults(
     loading?: boolean
     disabled?: boolean
     placeholder?: string
+    collapseTags?: boolean
+    collapseTagsTooltip?: boolean
   }>(),
   {
     modelValue: '',
@@ -17,6 +19,8 @@ const props = withDefaults(
     loading: false,
     disabled: false,
     placeholder: '请选择单位',
+    collapseTags: false,
+    collapseTagsTooltip: false,
   },
 )
 
@@ -61,6 +65,8 @@ const selectedValue = computed({
     filterable
     clearable
     :multiple="multiple"
+    :collapse-tags="collapseTags"
+    :collapse-tags-tooltip="collapseTagsTooltip"
     :loading="loading"
     :disabled="disabled"
     :placeholder="placeholder"
