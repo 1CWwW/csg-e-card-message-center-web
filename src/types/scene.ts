@@ -55,6 +55,7 @@ export interface SceneCreateForm {
 }
 
 export interface SceneUpdateForm {
+  sceneCode: string
   sceneName: string
   module: SceneModuleCode
   description?: string
@@ -64,6 +65,10 @@ export interface SceneUpdateForm {
 export interface SceneCodeCheckResult {
   sceneCode: string
   available: boolean
+}
+
+export interface SceneDisableCheckResult {
+  enabledTemplateCount: number
 }
 
 export interface ScenePageData {

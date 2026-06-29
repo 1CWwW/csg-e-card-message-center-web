@@ -340,10 +340,8 @@ onBeforeUnmount(() => {
       <el-empty
         v-if="!listLoading && !loadFailed && paramList.length === 0"
         class="scene-param-page__empty"
-        description="暂无参数，点击新增参数开始配置"
-      >
-        <el-button type="primary" :icon="Plus" @click="openCreateDialog">新增参数</el-button>
-      </el-empty>
+        description="暂无参数，请使用右上角新增参数进行配置"
+      />
     </el-card>
 
     <SceneParamFormDialog

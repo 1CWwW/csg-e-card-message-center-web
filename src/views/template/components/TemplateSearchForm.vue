@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { reactive } from 'vue'
+import { reactive, watch } from 'vue'
 import UnitTreeSelect from '../../../components/business/UnitTreeSelect.vue'
 import { CHANNEL_TYPE_OPTIONS } from '../../../types/channel'
 import type {
@@ -24,12 +24,13 @@ interface TemplateSearchModel {
   unitId: string
 }
 
-defineProps<{
+const props = defineProps<{
   loading: boolean
   scenes: TemplateSceneOption[]
   sceneLoading: boolean
   unitTree: UnitTreeNode[]
   unitTreeLoading: boolean
+  query: TemplateSearchPayload
 }>()
 
 const emit = defineEmits<{
@@ -44,6 +45,22 @@ const searchForm = reactive<TemplateSearchModel>({
   status: '',
   unitId: '',
 })
+
+const syncSearchForm = (query: TemplateSearchPayload) => {
+  searchForm.templateName = query.templateName ?? ''
+  searchForm.sceneId = query.sceneId ?? ''
+  searchForm.channelType = query.channelType ?? ''
+  searchForm.status = query.status ?? ''
+  searchForm.unitId = query.unitId ?? ''
+}
+
+watch(
+  () => props.query,
+  (query) => {
+    syncSearchForm(query)
+  },
+  { immediate: true, deep: true },
+)
 
 const buildSearchPayload = () => {
   const payload: TemplateSearchPayload = {}

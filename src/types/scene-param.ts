@@ -33,10 +33,15 @@ export interface SceneParamItem {
   updatedAt: string
 }
 
+export interface SceneParamUsageTemplate {
+  templateId?: string
+  templateName?: string
+}
+
 export interface SceneParamUsage {
   used: boolean
   usageCount: number
-  templates: string[]
+  templates: SceneParamUsageTemplate[]
 }
 
 export interface SceneParamCreateForm {

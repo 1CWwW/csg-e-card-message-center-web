@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import {
@@ -43,6 +43,7 @@ type TemplateSearchPayload = Partial<
 type DialogMode = 'create' | 'edit'
 
 const router = useRouter()
+const route = useRoute()
 const templateList = ref<TemplateListItem[]>([])
 const total = ref(0)
 const listLoading = ref(false)
@@ -74,6 +75,14 @@ const query = reactive<TemplateQuery>({
   pageNum: '1',
   pageSize: '10',
 })
+
+const searchQuery = computed<TemplateSearchPayload>(() => ({
+  templateName: query.templateName,
+  sceneId: query.sceneId,
+  channelType: query.channelType,
+  status: query.status,
+  unitId: query.unitId,
+}))
 
 const overview = reactive({
   total: 0,
@@ -114,6 +123,26 @@ const fetchTemplateList = async () => {
   } finally {
     listLoading.value = false
   }
+}
+
+const readRouteSceneId = () => {
+  const value = route.query.sceneId
+  return Array.isArray(value) ? value[0] || '' : value || ''
+}
+
+const syncRouteSceneId = (sceneId?: string) => {
+  const nextQuery = { ...route.query }
+
+  if (sceneId) {
+    nextQuery.sceneId = sceneId
+  } else {
+    delete nextQuery.sceneId
+  }
+
+  router.replace({
+    path: route.path,
+    query: nextQuery,
+  })
 }
 
 const fetchOverview = async () => {
@@ -203,6 +232,7 @@ const handleSearch = (payload: TemplateSearchPayload) => {
   query.channelType = payload.channelType
   query.status = payload.status
   query.unitId = payload.unitId
+  syncRouteSceneId(payload.sceneId)
   fetchTemplateList()
 }
 
@@ -213,6 +243,7 @@ const handleReset = () => {
   query.channelType = undefined
   query.status = undefined
   query.unitId = undefined
+  syncRouteSceneId()
   fetchTemplateList()
 }
 
@@ -476,7 +507,30 @@ const openUnitDialog = async (row: TemplateListItem) => {
   }
 }
 
+watch(
+  () => route.query.sceneId,
+  () => {
+    const routeSceneId = readRouteSceneId()
+    const nextSceneId = routeSceneId || undefined
+
+    if (query.sceneId === nextSceneId) {
+      return
+    }
+
+    query.pageNum = '1'
+    query.sceneId = nextSceneId
+    fetchTemplateList()
+  },
+)
+
 onMounted(() => {
+  const routeSceneId = readRouteSceneId()
+
+  if (routeSceneId) {
+    query.pageNum = '1'
+    query.sceneId = routeSceneId
+  }
+
   refreshTemplatePage()
   loadSceneOptions()
   loadUnitTree()
@@ -524,6 +578,7 @@ onMounted(() => {
       :scene-loading="sceneLoading"
       :unit-tree="unitTree"
       :unit-tree-loading="unitTreeLoading"
+      :query="searchQuery"
       @search="handleSearch"
       @reset="handleReset"
     />
@@ -700,6 +755,30 @@ onMounted(() => {
     --el-pagination-button-width: 32px;
     --el-pagination-button-height: 28px;
     gap: 8px;
+  }
+
+  :deep(.el-pagination__sizes) {
+    margin-right: 0;
+  }
+
+  :deep(.el-select) {
+    width: 92px;
+  }
+
+  :deep(.el-select__wrapper) {
+    min-height: 28px;
+    padding: 0 8px;
+    border-radius: 7px;
+  }
+
+  :deep(.el-pagination__total) {
+    margin-right: 0;
+    color: var(--app-text-secondary);
+    font-size: 12px;
+  }
+
+  :deep(.el-pager) {
+    margin: 0;
   }
 }
 </style>

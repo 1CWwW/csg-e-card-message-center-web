@@ -4,6 +4,7 @@ import type { ApiResponse } from '../types/api'
 import type {
   SceneCodeCheckResult,
   SceneCreateForm,
+  SceneDisableCheckResult,
   SceneItem,
   ScenePageData,
   SceneQuery,
@@ -81,9 +82,23 @@ export const toggleSceneStatus = async (id: string) => {
   return getRequiredData(response)
 }
 
-export const checkSceneCode = async (sceneCode: string) => {
+export const checkSceneDisable = async (id: string) => {
+  const response = await request.get<ApiResponse<SceneDisableCheckResult>>(
+    `/api/msg/scene/${id}/disable-check`,
+  )
+
+  return getRequiredData(response)
+}
+
+export const checkSceneCode = async (sceneCode: string, excludeId?: string) => {
+  const params: RequestParams = { sceneCode }
+
+  if (excludeId) {
+    params.excludeId = excludeId
+  }
+
   const response = await request.get<ApiResponse<SceneCodeCheckResult>>('/api/msg/scene/check-code', {
-    params: { sceneCode },
+    params,
   })
 
   return getRequiredData(response)

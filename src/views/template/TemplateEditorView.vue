@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import * as Blockly from 'blockly'
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
 import {
   Aim,
   ArrowLeft,
+  Delete,
   Document,
   RefreshLeft,
   RefreshRight,
@@ -32,8 +33,11 @@ import TemplateReferenceDialog from './components/TemplateReferenceDialog.vue'
 import {
   registerTemplateBlocks,
   syncSceneParamBlockLabels,
+  validateSceneParamBlocks,
 } from './blockly/blockDefinitions'
 import {
+  BLOCKLY_SCHEMA_VERSION,
+  clearTemplateWorkspaceUndo,
   createTemplateWorkspace,
   disposeTemplateWorkspace,
   loadTemplateWorkspace,
@@ -49,7 +53,9 @@ const workspaceContainer = ref<HTMLElement>()
 const templateDetail = ref<TemplateDetail | null>(null)
 const toolboxData = ref<TemplateToolboxData | null>(null)
 const loading = ref(false)
+const ready = ref(false)
 const loadFailed = ref(false)
+const loadError = ref('')
 const saving = ref(false)
 const dirty = ref(false)
 const saveErrors = ref<string[]>([])
@@ -58,11 +64,17 @@ const previewDialogVisible = ref(false)
 const previewWorkspace = ref<BlocklyWorkspaceState>({})
 const workspaceScale = ref(100)
 const hasWorkspaceBlocks = ref(false)
+const canUndo = ref(false)
+const canRedo = ref(false)
 let workspace: Blockly.WorkspaceSvg | null = null
 let connectionOverlay: TemplateConnectionOverlay | null = null
 let restoringWorkspace = false
 let leaveConfirmPromise: Promise<boolean> | null = null
 let originalBodyOverflow = ''
+let editorDisposed = false
+let loadSequence = 0
+let skipNextLeaveConfirm = false
+let resizeObserver: ResizeObserver | null = null
 
 const templateId = computed(() => {
   const value = route.params.templateId
@@ -81,22 +93,125 @@ const channelTypeText = computed(() =>
 const sceneText = computed(
   () => templateDetail.value?.sceneName || templateDetail.value?.sceneCode || '-',
 )
+const canZoomOut = computed(() => workspaceScale.value > 50)
+const canZoomIn = computed(() => workspaceScale.value < 200)
+
+interface WorkspaceHistoryState {
+  undoStack_?: unknown[]
+  redoStack_?: unknown[]
+}
+
+const updateToolbarState = () => {
+  if (!workspace) {
+    canUndo.value = false
+    canRedo.value = false
+    return
+  }
+
+  const historyWorkspace = workspace as unknown as WorkspaceHistoryState
+  canUndo.value = (historyWorkspace.undoStack_?.length ?? 0) > 0
+  canRedo.value = (historyWorkspace.redoStack_?.length ?? 0) > 0
+}
+
+const readErrorMessage = (error: unknown, fallback: string) => {
+  if (error instanceof Error && error.message) {
+    return error.message
+  }
+
+  if (typeof error === 'string' && error.trim()) {
+    return error
+  }
+
+  return fallback
+}
+
+const isEditableTarget = (target: EventTarget | null) => {
+  if (!(target instanceof HTMLElement)) {
+    return false
+  }
+
+  return Boolean(
+    target.closest(
+      'input, textarea, select, [contenteditable="true"], .el-input, .el-input-number, .el-date-editor, .blocklyHtmlInput, .blocklyWidgetDiv, .blocklyDropDownDiv',
+    ),
+  )
+}
+
+const resizeWorkspace = () => {
+  if (!workspace) {
+    return
+  }
+
+  resizeTemplateWorkspace(workspace)
+  connectionOverlay?.scheduleRender()
+}
+
+const attachResizeObserver = () => {
+  resizeObserver?.disconnect()
+  resizeObserver = null
+
+  if (!workspaceContainer.value || typeof ResizeObserver === 'undefined') {
+    return
+  }
+
+  resizeObserver = new ResizeObserver(() => {
+    resizeWorkspace()
+  })
+  resizeObserver.observe(workspaceContainer.value)
+
+  if (workspaceContainer.value.parentElement) {
+    resizeObserver.observe(workspaceContainer.value.parentElement)
+  }
+}
+
+const waitForInitialWorkspaceEvents = () =>
+  new Promise<void>((resolve) => {
+    window.setTimeout(resolve, 120)
+  })
+
+const disposeCurrentWorkspace = () => {
+  resizeObserver?.disconnect()
+  resizeObserver = null
+  disposeTemplateWorkspace(workspace, handleWorkspaceChange)
+  connectionOverlay?.dispose()
+  connectionOverlay = null
+  workspace = null
+  ready.value = false
+  hasWorkspaceBlocks.value = false
+  canUndo.value = false
+  canRedo.value = false
+}
 
 const refreshWorkspaceState = () => {
   if (!workspace) {
     hasWorkspaceBlocks.value = false
+    updateToolbarState()
     return
   }
 
   workspaceScale.value = Math.round(workspace.getScale() * 100)
   hasWorkspaceBlocks.value = workspace.getAllBlocks(false).length > 0
+  updateToolbarState()
 }
 
 const handleWorkspaceChange = (event: Blockly.Events.Abstract) => {
+  if (!workspace || editorDisposed) {
+    return
+  }
+
   refreshWorkspaceState()
   connectionOverlay?.scheduleRender()
 
-  if (restoringWorkspace || event.isUiEvent) {
+  if (!ready.value || restoringWorkspace || event.isUiEvent) {
+    return
+  }
+
+  if (
+    event.type !== Blockly.Events.BLOCK_CREATE &&
+    event.type !== Blockly.Events.BLOCK_DELETE &&
+    event.type !== Blockly.Events.BLOCK_MOVE &&
+    event.type !== Blockly.Events.BLOCK_CHANGE
+  ) {
     return
   }
 
@@ -122,7 +237,7 @@ const handleWorkspaceChange = (event: Blockly.Events.Abstract) => {
 
 const initializeWorkspace = async () => {
   if (!workspaceContainer.value || !toolboxData.value) {
-    return
+    throw new Error('编辑器容器尚未准备完成')
   }
 
   registerTemplateBlocks()
@@ -136,54 +251,98 @@ const initializeWorkspace = async () => {
 
   if (document) {
     restoringWorkspace = true
-    loadTemplateWorkspace(workspace, document.workspace)
-    syncSceneParamBlockLabels(workspace, toolboxData.value)
-    restoringWorkspace = false
+    try {
+      loadTemplateWorkspace(workspace, document.workspace)
+      syncSceneParamBlockLabels(workspace, toolboxData.value)
+      validateSceneParamBlocks(workspace, toolboxData.value)
+    } finally {
+      restoringWorkspace = false
+    }
   }
 
-  dirty.value = false
   refreshWorkspaceState()
-  resizeTemplateWorkspace(workspace)
+  resizeWorkspace()
+  attachResizeObserver()
   connectionOverlay.scheduleRender()
 }
 
 const loadEditor = async () => {
+  const currentLoadSequence = ++loadSequence
+
   if (!templateId.value) {
+    ready.value = false
     loadFailed.value = true
+    loadError.value = '缺少模板 ID，无法加载编辑器。'
     return
   }
 
   loading.value = true
+  ready.value = false
   loadFailed.value = false
+  loadError.value = ''
   saveErrors.value = []
-  disposeTemplateWorkspace(workspace, handleWorkspaceChange)
-  connectionOverlay?.dispose()
-  connectionOverlay = null
-  workspace = null
+  disposeCurrentWorkspace()
 
   try {
-    const [detail, toolbox] = await Promise.all([
-      getTemplateDetail(templateId.value),
-      getTemplateToolbox(templateId.value),
-    ])
+    const id = templateId.value
+    const detail = await getTemplateDetail(id)
+
+    if (editorDisposed || currentLoadSequence !== loadSequence) {
+      return
+    }
+
+    const toolbox = await getTemplateToolbox(id)
+
+    if (editorDisposed || currentLoadSequence !== loadSequence) {
+      return
+    }
+
     templateDetail.value = detail
     toolboxData.value = {
       ...toolbox,
       params: toolbox.params ?? [],
     }
     await nextTick()
+
+    if (editorDisposed || currentLoadSequence !== loadSequence) {
+      return
+    }
+
     await initializeWorkspace()
-  } catch {
+    await waitForInitialWorkspaceEvents()
+
+    if (editorDisposed || currentLoadSequence !== loadSequence) {
+      return
+    }
+
+    if (workspace) {
+      clearTemplateWorkspaceUndo(workspace)
+    }
+
+    ready.value = true
+    dirty.value = false
+  } catch (error) {
+    if (editorDisposed || currentLoadSequence !== loadSequence) {
+      return
+    }
+
     templateDetail.value = null
     toolboxData.value = null
     loadFailed.value = true
+    ready.value = false
+    loadError.value = readErrorMessage(
+      error,
+      '模板编辑器加载失败，请检查服务后重新加载。',
+    )
   } finally {
-    loading.value = false
+    if (currentLoadSequence === loadSequence) {
+      loading.value = false
+    }
   }
 }
 
 const saveContent = async () => {
-  if (!workspace || saving.value || !templateId.value) {
+  if (!ready.value || !workspace || saving.value || !templateId.value) {
     return
   }
 
@@ -192,15 +351,20 @@ const saveContent = async () => {
 
   try {
     const form: TemplateContentSaveForm = {
-      schemaVersion: 1,
+      schemaVersion: BLOCKLY_SCHEMA_VERSION,
       workspace: saveTemplateWorkspace(workspace),
     }
     const result = await saveTemplateContent(templateId.value, form)
 
     if (result.valid !== true) {
+      dirty.value = true
       saveErrors.value =
         result.errors?.filter((error) => Boolean(error.trim())) ?? ['模板内容校验未通过']
       ElMessage.error('模板内容校验未通过')
+      return
+    }
+
+    if (editorDisposed || !workspace) {
       return
     }
 
@@ -208,12 +372,16 @@ const saveContent = async () => {
 
     if (normalizedDocument) {
       restoringWorkspace = true
-      loadTemplateWorkspace(workspace, normalizedDocument.workspace)
-      if (toolboxData.value) {
-        syncSceneParamBlockLabels(workspace, toolboxData.value)
+      try {
+        loadTemplateWorkspace(workspace, normalizedDocument.workspace)
+        if (toolboxData.value) {
+          syncSceneParamBlockLabels(workspace, toolboxData.value)
+          validateSceneParamBlocks(workspace, toolboxData.value)
+        }
+        refreshWorkspaceState()
+      } finally {
+        restoringWorkspace = false
       }
-      refreshWorkspaceState()
-      restoringWorkspace = false
     }
 
     if (templateDetail.value) {
@@ -224,13 +392,18 @@ const saveContent = async () => {
 
     dirty.value = false
     ElMessage.success('模板内容保存成功')
+  } catch (error) {
+    const message = readErrorMessage(error, '模板内容保存失败，请稍后重试。')
+    dirty.value = true
+    saveErrors.value = [message]
+    ElMessage.error(message)
   } finally {
     saving.value = false
   }
 }
 
 const confirmDiscardChanges = () => {
-  if (!dirty.value) {
+  if (loadFailed.value || !dirty.value) {
     return Promise.resolve(true)
   }
 
@@ -268,10 +441,10 @@ const loadReference = async (detail: TemplateReferenceDetail) => {
     return
   }
 
-  if (dirty.value) {
+  if (hasWorkspaceBlocks.value) {
     try {
       await ElMessageBox.confirm(
-        '当前画布存在未保存修改，加载参考模板将覆盖当前内容，是否继续？',
+        '加载参考模板将覆盖当前画布内容，是否继续？',
         '覆盖当前画布',
         {
           type: 'warning',
@@ -291,6 +464,7 @@ const loadReference = async (detail: TemplateReferenceDetail) => {
     loadTemplateWorkspace(workspace, document.workspace)
     if (toolboxData.value) {
       syncSceneParamBlockLabels(workspace, toolboxData.value)
+      validateSceneParamBlocks(workspace, toolboxData.value)
     }
     dirty.value = true
     refreshWorkspaceState()
@@ -301,6 +475,7 @@ const loadReference = async (detail: TemplateReferenceDetail) => {
     loadTemplateWorkspace(workspace, currentState)
     if (toolboxData.value) {
       syncSceneParamBlockLabels(workspace, toolboxData.value)
+      validateSceneParamBlocks(workspace, toolboxData.value)
     }
     refreshWorkspaceState()
     ElMessage.error('参考模板加载失败，当前画布已保留')
@@ -310,7 +485,7 @@ const loadReference = async (detail: TemplateReferenceDetail) => {
 }
 
 const openPreview = () => {
-  if (!workspace) {
+  if (!ready.value || !workspace) {
     return
   }
 
@@ -318,15 +493,26 @@ const openPreview = () => {
   previewDialogVisible.value = true
 }
 
+watch(previewDialogVisible, async () => {
+  await nextTick()
+  resizeWorkspace()
+})
+
 const undoWorkspace = () => {
   workspace?.undo(false)
+  refreshWorkspaceState()
 }
 
 const redoWorkspace = () => {
   workspace?.undo(true)
+  refreshWorkspaceState()
 }
 
 const zoomWorkspace = (direction: 1 | -1) => {
+  if ((direction < 0 && !canZoomOut.value) || (direction > 0 && !canZoomIn.value)) {
+    return
+  }
+
   workspace?.zoomCenter(direction)
 
   if (workspace) {
@@ -336,12 +522,47 @@ const zoomWorkspace = (direction: 1 | -1) => {
 }
 
 const centerWorkspace = () => {
-  workspace?.zoomToFit()
+  workspace?.setScale(1)
+  workspace?.scrollCenter()
 
   if (workspace) {
     workspaceScale.value = Math.round(workspace.getScale() * 100)
     connectionOverlay?.scheduleRender()
   }
+}
+
+const clearWorkspace = async () => {
+  if (!workspace || !hasWorkspaceBlocks.value) {
+    return
+  }
+
+  try {
+    await ElMessageBox.confirm(
+      '确认清空当前画布中的全部积木吗？该操作可以通过撤销恢复。',
+      '清空画布',
+      {
+        type: 'warning',
+        confirmButtonText: '确认清空',
+        cancelButtonText: '取消',
+      },
+    )
+  } catch {
+    return
+  }
+
+  Blockly.Events.setGroup(true)
+  try {
+    workspace.getTopBlocks(false).forEach((block) => {
+      block.dispose(true, true)
+    })
+  } finally {
+    Blockly.Events.setGroup(false)
+  }
+
+  dirty.value = true
+  saveErrors.value = []
+  refreshWorkspaceState()
+  connectionOverlay?.scheduleRender()
 }
 
 const isToolboxBlockState = (value: unknown): value is TemplateToolboxBlockState => {
@@ -406,15 +627,23 @@ const handleWorkspaceDrop = (event: DragEvent) => {
 }
 
 const returnToList = () => {
-  router.push('/template')
+  confirmDiscardChanges().then((confirmed) => {
+    if (!confirmed) {
+      return
+    }
+
+    skipNextLeaveConfirm = true
+    router.push('/template').catch(() => {
+      skipNextLeaveConfirm = false
+    })
+  })
 }
 
 const handleResize = () => {
-  resizeTemplateWorkspace(workspace)
-  connectionOverlay?.scheduleRender()
+  resizeWorkspace()
 }
 const handleBeforeUnload = (event: BeforeUnloadEvent) => {
-  if (!dirty.value) {
+  if (loadFailed.value || !dirty.value) {
     return
   }
 
@@ -423,15 +652,58 @@ const handleBeforeUnload = (event: BeforeUnloadEvent) => {
 }
 
 const handleShortcut = (event: KeyboardEvent) => {
-  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
+  const key = event.key.toLowerCase()
+  const hasModifier = event.ctrlKey || event.metaKey
+
+  if (hasModifier && key === 's') {
     event.preventDefault()
     saveContent()
+    return
+  }
+
+  if (isEditableTarget(event.target)) {
+    return
+  }
+
+  if (hasModifier && key === 'z') {
+    event.preventDefault()
+    if (event.shiftKey) {
+      redoWorkspace()
+      return
+    }
+    undoWorkspace()
+    return
+  }
+
+  if (hasModifier && key === 'y') {
+    event.preventDefault()
+    redoWorkspace()
+    return
+  }
+
+  if (key === 'escape') {
+    if (previewDialogVisible.value) {
+      previewDialogVisible.value = false
+      return
+    }
+
+    if (referenceDialogVisible.value) {
+      referenceDialogVisible.value = false
+    }
   }
 }
 
-onBeforeRouteLeave(async () => confirmDiscardChanges())
+onBeforeRouteLeave(async () => {
+  if (skipNextLeaveConfirm) {
+    skipNextLeaveConfirm = false
+    return true
+  }
+
+  return confirmDiscardChanges()
+})
 
 onMounted(() => {
+  editorDisposed = false
   originalBodyOverflow = document.body.style.overflow
   document.body.style.overflow = 'hidden'
   window.addEventListener('resize', handleResize)
@@ -441,14 +713,17 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  editorDisposed = true
+  loadSequence += 1
+  referenceDialogVisible.value = false
+  previewDialogVisible.value = false
   document.body.style.overflow = originalBodyOverflow
   window.removeEventListener('resize', handleResize)
   window.removeEventListener('beforeunload', handleBeforeUnload)
   window.removeEventListener('keydown', handleShortcut)
-  disposeTemplateWorkspace(workspace, handleWorkspaceChange)
-  connectionOverlay?.dispose()
-  connectionOverlay = null
-  workspace = null
+  resizeObserver?.disconnect()
+  resizeObserver = null
+  disposeCurrentWorkspace()
 })
 </script>
 
@@ -491,7 +766,7 @@ onBeforeUnmount(() => {
           <span class="template-editor-page__shortcut">Ctrl+S 保存</span>
           <el-button
             class="template-editor-page__preview"
-            :disabled="loading || loadFailed || !workspace"
+            :disabled="loading || loadFailed || !ready || !workspace"
             @click="openPreview"
           >
             预览
@@ -500,7 +775,7 @@ onBeforeUnmount(() => {
             class="template-editor-page__save"
             type="primary"
             :loading="saving"
-            :disabled="loading || loadFailed || !workspace || !dirty"
+            :disabled="loading || loadFailed || !ready || !workspace || !dirty"
             @click="saveContent"
           >
             保存
@@ -511,13 +786,14 @@ onBeforeUnmount(() => {
       <el-alert
         v-if="loadFailed"
         class="template-editor-page__load-error"
-        title="模板编辑器加载失败，请检查服务后重新加载。"
+        :title="loadError || '模板编辑器加载失败，请检查服务后重新加载。'"
         type="error"
         show-icon
         :closable="false"
       >
         <template #default>
           <el-button type="primary" link @click="loadEditor">重新加载</el-button>
+          <el-button link @click="returnToList">返回列表</el-button>
         </template>
       </el-alert>
 
@@ -540,13 +816,13 @@ onBeforeUnmount(() => {
             <el-button
               :icon="RefreshLeft"
               title="撤销"
-              :disabled="loading || loadFailed || !workspace"
+              :disabled="loading || loadFailed || !ready || !workspace || !canUndo"
               @click="undoWorkspace"
             />
             <el-button
               :icon="RefreshRight"
               title="重做"
-              :disabled="loading || loadFailed || !workspace"
+              :disabled="loading || loadFailed || !ready || !workspace || !canRedo"
               @click="redoWorkspace"
             />
           </div>
@@ -555,29 +831,36 @@ onBeforeUnmount(() => {
             <el-button
               :icon="ZoomOut"
               title="缩小"
-              :disabled="loading || loadFailed || !workspace"
+              :disabled="loading || loadFailed || !ready || !workspace || !canZoomOut"
               @click="zoomWorkspace(-1)"
             />
             <span class="template-editor-page__scale">{{ workspaceScale }}%</span>
             <el-button
               :icon="ZoomIn"
               title="放大"
-              :disabled="loading || loadFailed || !workspace"
+              :disabled="loading || loadFailed || !ready || !workspace || !canZoomIn"
               @click="zoomWorkspace(1)"
             />
             <el-button
               :icon="Aim"
               title="居中"
-              :disabled="loading || loadFailed || !workspace"
+              :disabled="loading || loadFailed || !ready || !workspace"
               @click="centerWorkspace"
             />
           </div>
           <div class="template-editor-page__divider" />
           <el-button
+            class="template-editor-page__delete"
+            :icon="Delete"
+            title="清空画布"
+            :disabled="loading || loadFailed || !ready || !workspace || !hasWorkspaceBlocks"
+            @click="clearWorkspace"
+          />
+          <el-button
             class="template-editor-page__reference"
             :icon="Document"
             title="参考模板"
-            :disabled="loading || loadFailed || !workspace"
+            :disabled="loading || loadFailed || !ready || !workspace"
             @click="referenceDialogVisible = true"
           >
             参考模板
@@ -603,7 +886,7 @@ onBeforeUnmount(() => {
               <span>请从左侧工具箱拖入文本、场景参数或格式化积木</span>
             </div>
             <span class="template-editor-page__hint">
-              快捷键：Ctrl+Z 撤销 · Ctrl+Y 重做 · Ctrl+S 保存 · Ctrl+滚轮 缩放 · Delete 删除
+              快捷键：Ctrl+Z 撤销 · Ctrl+Y 重做 · Ctrl+S 保存 · Ctrl+滚轮 缩放 · Delete 删除选中积木
             </span>
           </div>
         </div>
@@ -953,12 +1236,13 @@ onBeforeUnmount(() => {
   }
 
   :deep(.blocklyBlockCanvas .blocklyDraggable) {
-    filter: drop-shadow(0 2px 3px rgb(40 55 85 / 8%));
+    filter: drop-shadow(0 2px 4px rgb(40 55 85 / 7%));
   }
 
   :deep(.blocklySelected > .template-block-card) {
     stroke: #3568d4;
-    filter: drop-shadow(0 0 4px rgb(53 104 212 / 28%));
+    stroke-width: 2px;
+    filter: drop-shadow(0 0 4px rgb(53 104 212 / 22%));
   }
 
   :deep(.blocklyScrollbarHandle) {
@@ -967,18 +1251,59 @@ onBeforeUnmount(() => {
   }
 
   :deep(.blocklyTrash) {
-    opacity: 0.48;
+    opacity: 1;
+    transform-box: fill-box;
+    transform-origin: center bottom;
+    transition:
+      opacity 0.12s ease,
+      transform 0.12s ease;
   }
 
   :deep(.blocklyTrash:hover),
   :deep(.blocklyTrash:focus) {
-    opacity: 0.8;
+    opacity: 1;
   }
 
   :deep(.blocklyTrash .blocklyFocusRing) {
-    fill: #ffffff;
-    stroke: #e2e7ef;
-    stroke-width: 1px;
+    width: 108px;
+    height: 78px;
+    x: -30px;
+    y: -20px;
+    rx: 54px;
+    ry: 54px;
+    fill: rgb(255 86 86 / 20%);
+    stroke: #e72f3c;
+    stroke-dasharray: 7 5;
+    stroke-linecap: round;
+    stroke-width: 3px;
+  }
+
+  :deep(.blocklyTrash image) {
+    opacity: 0.46;
+    filter: invert(32%) sepia(68%) saturate(1742%) hue-rotate(330deg) brightness(101%) contrast(91%);
+  }
+
+  :deep(.blocklyTrash .blocklyTrashLid) {
+    opacity: 0.46;
+  }
+
+  :deep(.blocklyTrash.blocklyDeleteStyle .blocklyFocusRing) {
+    fill: rgb(255 70 70 / 34%);
+    stroke: #dc1f2f;
+    stroke-dasharray: none;
+  }
+
+  :deep(.blocklyTrash.blocklyDeleteStyle) {
+    transform: scale(1.04);
+  }
+
+  :deep(.blocklyTrash.blocklyDeleteStyle image) {
+    opacity: 0.9;
+    filter: invert(24%) sepia(100%) saturate(2542%) hue-rotate(340deg) brightness(91%) contrast(95%);
+  }
+
+  :deep(.blocklyTrash.blocklyDeleteStyle .blocklyTrashLid) {
+    opacity: 0.9;
   }
 
   :deep(.blocklyBlock > .blocklyPath),
@@ -992,7 +1317,7 @@ onBeforeUnmount(() => {
   :deep(.template-block-card) {
     fill: #ffffff;
     stroke: var(--template-block-border, #64748b);
-    stroke-width: 2px;
+    stroke-width: 1.25px;
     vector-effect: non-scaling-stroke;
     pointer-events: none;
   }
@@ -1003,6 +1328,11 @@ onBeforeUnmount(() => {
     paint-order: normal !important;
     font-size: 12px;
     font-weight: 500;
+  }
+
+  :deep(.blocklyBlock .blocklyLabelField:first-child .blocklyFieldText) {
+    fill: var(--template-block-colour, #64748b) !important;
+    font-weight: 700;
   }
 
   :deep(.text.blocklyBlock .blocklyLabelField .blocklyFieldText) {
@@ -1018,12 +1348,12 @@ onBeforeUnmount(() => {
 
   :deep(.blocklyTextInputField .blocklyFieldText) {
     fill: #26324a !important;
-    font-size: 14px;
+    font-size: 13px;
     font-weight: 500;
   }
 
   :deep(.template-field-underline) {
-    stroke: #94a3b8;
+    stroke: #a7b3c4;
     stroke-width: 1px;
     stroke-dasharray: 4 3;
     pointer-events: none;
@@ -1066,8 +1396,8 @@ onBeforeUnmount(() => {
 
   :deep(.math_arithmetic.blocklyBlock),
   :deep(.math_modulo.blocklyBlock) {
-    --template-block-colour: #7558d6;
-    --template-block-tint: #f2effd;
+    --template-block-colour: #2fc46b;
+    --template-block-tint: #eafaf1;
   }
 
   :deep(.controls_forEach.blocklyBlock),
@@ -1120,6 +1450,16 @@ onBeforeUnmount(() => {
   ) {
     fill: transparent !important;
     stroke: transparent !important;
+    stroke-width: 0;
+  }
+
+  :deep(.blocklyBlock > .blocklyPath),
+  :deep(.blocklyBlock > .blocklyOutlinePath),
+  :deep(.blocklyBlock > .blocklyPathSelected) {
+    fill: transparent !important;
+    stroke: transparent !important;
+    stroke-width: 0;
+    filter: none !important;
   }
 
   :deep(
@@ -1178,19 +1518,24 @@ onBeforeUnmount(() => {
 
   :deep(.template-connection-line) {
     fill: none;
-    stroke: #94a3b8;
-    stroke-width: 2px;
+    stroke: #a8b3c2;
+    stroke-width: 1.5px;
+    stroke-opacity: 0.72;
     vector-effect: non-scaling-stroke;
   }
 
   :deep(.template-connection-port) {
     fill: #ffffff;
     stroke: var(--connection-colour, #64748b);
-    stroke-width: 2px;
+    stroke-width: 1.5px;
     vector-effect: non-scaling-stroke;
+    pointer-events: none;
+    transition: r 0.12s ease, fill 0.12s ease, stroke 0.12s ease;
+  }
+
+  :deep(.template-connection-port.is-statement) {
     cursor: crosshair;
     pointer-events: all;
-    transition: r 0.12s ease, fill 0.12s ease, stroke 0.12s ease;
   }
 
   :deep(.template-connection-port:hover),

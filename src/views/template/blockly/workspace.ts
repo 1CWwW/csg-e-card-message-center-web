@@ -9,6 +9,8 @@ import { registerTemplateCardRenderer } from './cardRenderer'
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
 
+export const BLOCKLY_SCHEMA_VERSION = 1 as const
+
 const templateEditorTheme = Blockly.Theme.defineTheme('templateEditorTheme', {
   name: 'templateEditorTheme',
   base: Blockly.Themes.Classic,
@@ -44,9 +46,9 @@ const templateEditorTheme = Blockly.Theme.defineTheme('templateEditorTheme', {
       colourTertiary: '#18756f',
     },
     math_expression_blocks: {
-      colourPrimary: '#7558d6',
-      colourSecondary: '#6549c1',
-      colourTertiary: '#543ca5',
+      colourPrimary: '#2fc46b',
+      colourSecondary: '#25a95a',
+      colourTertiary: '#1d8c49',
     },
     loop_expression_blocks: {
       colourPrimary: '#8457e8',
@@ -99,13 +101,26 @@ export const parseBlocklyDocument = (
     }
   }
 
-  if (!isRecord(parsedValue) || !isRecord(parsedValue.workspace)) {
+  if (!isRecord(parsedValue)) {
+    return null
+  }
+
+  if (!isRecord(parsedValue.workspace)) {
+    if (isRecord(parsedValue.blocks)) {
+      return {
+        schemaVersion: BLOCKLY_SCHEMA_VERSION,
+        workspace: parsedValue,
+      }
+    }
+
     return null
   }
 
   return {
     schemaVersion:
-      typeof parsedValue.schemaVersion === 'number' ? parsedValue.schemaVersion : 1,
+      typeof parsedValue.schemaVersion === 'number'
+        ? parsedValue.schemaVersion
+        : BLOCKLY_SCHEMA_VERSION,
     workspace: parsedValue.workspace,
   }
 }
@@ -134,7 +149,7 @@ export const createTemplateWorkspace = (
     },
     grid: {
       spacing: 20,
-      length: 1,
+      length: 2,
       colour: '#dfe7f1',
       snap: true,
     },
@@ -162,6 +177,10 @@ export const loadTemplateWorkspace = (
 export const saveTemplateWorkspace = (
   workspace: Blockly.WorkspaceSvg,
 ): BlocklyWorkspaceState => Blockly.serialization.workspaces.save(workspace)
+
+export const clearTemplateWorkspaceUndo = (workspace: Blockly.WorkspaceSvg) => {
+  workspace.clearUndo()
+}
 
 export const resizeTemplateWorkspace = (workspace: Blockly.WorkspaceSvg | null) => {
   if (workspace) {

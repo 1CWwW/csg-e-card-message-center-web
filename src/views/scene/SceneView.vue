@@ -1,14 +1,14 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
 import {
+  checkSceneDisable,
   createScene,
   deleteScene,
   getSceneDetail,
   getSceneList,
-  toggleSceneStatus,
   updateScene,
 } from '../../api/scene'
 import type {
@@ -24,6 +24,7 @@ import SceneTable from './components/SceneTable.vue'
 
 type SceneSearchPayload = Partial<Pick<SceneQuery, 'sceneCode' | 'sceneName' | 'module' | 'status'>>
 type DialogMode = 'create' | 'edit'
+type SceneSortOrder = 'ascending' | 'descending' | null
 
 const router = useRouter()
 const sceneList = ref<SceneItem[]>([])
@@ -37,6 +38,7 @@ const currentScene = ref<SceneItem | null>(null)
 const detailLoading = ref(false)
 const submitLoading = ref(false)
 const operationLoadingId = ref('')
+const createdAtSortOrder = ref<SceneSortOrder>(null)
 
 const query = reactive<SceneQuery>({
   pageNum: 1,
@@ -65,6 +67,31 @@ const averageParamCount = computed(() => {
   }
 
   return (overview.paramTotal / overview.total).toFixed(1)
+})
+
+const getTimeValue = (value?: string) => {
+  if (!value) {
+    return 0
+  }
+
+  const time = new Date(value.replace(' ', 'T')).getTime()
+  return Number.isNaN(time) ? 0 : time
+}
+
+const sortedSceneList = computed(() => {
+  const sortOrder = createdAtSortOrder.value ?? 'descending'
+
+  return [...sceneList.value].sort((current, next) => {
+    const currentTime = getTimeValue(current.createdAt)
+    const nextTime = getTimeValue(next.createdAt)
+    const diff = currentTime - nextTime
+
+    if (diff === 0) {
+      return 0
+    }
+
+    return sortOrder === 'ascending' ? diff : -diff
+  })
 })
 
 const fetchSceneList = async () => {
@@ -147,6 +174,20 @@ const handlePageChange = (pageNum: number) => {
   fetchSceneList()
 }
 
+const handleCreatedAtSortChange = () => {
+  if (createdAtSortOrder.value === null) {
+    createdAtSortOrder.value = 'ascending'
+    return
+  }
+
+  if (createdAtSortOrder.value === 'ascending') {
+    createdAtSortOrder.value = 'descending'
+    return
+  }
+
+  createdAtSortOrder.value = null
+}
+
 const openParamPage = (row: SceneItem) => {
   if (!row.id) {
     ElMessage.warning('场景 ID 为空，无法进入参数管理')
@@ -154,6 +195,20 @@ const openParamPage = (row: SceneItem) => {
   }
 
   router.push(`/scene/${row.id}/params`)
+}
+
+const openTemplatePage = (row: SceneItem) => {
+  if (!row.id) {
+    ElMessage.warning('场景 ID 为空，无法进入模板管理')
+    return
+  }
+
+  router.push({
+    path: '/template',
+    query: {
+      sceneId: row.id,
+    },
+  })
 }
 
 const openCreateDialog = () => {
@@ -199,6 +254,26 @@ const handleUpdate = async (form: SceneUpdateForm) => {
     return
   }
 
+  if (currentScene.value.status === 1 && form.status === 0) {
+    let confirmMessage = `确认停用场景“${currentScene.value.sceneName}”吗？`
+
+    try {
+      const { enabledTemplateCount } = await checkSceneDisable(currentScene.value.id)
+
+      if (enabledTemplateCount > 0) {
+        confirmMessage = `该场景下存在${enabledTemplateCount}个启用的模板，停用后这些模板的推送将全部失败。确认停用？`
+      }
+
+      await ElMessageBox.confirm(confirmMessage, '停用确认', {
+        type: 'warning',
+        confirmButtonText: '确认停用',
+        cancelButtonText: '取消',
+      })
+    } catch {
+      return
+    }
+  }
+
   submitLoading.value = true
 
   try {
@@ -208,30 +283,6 @@ const handleUpdate = async (form: SceneUpdateForm) => {
     await refreshScenePage()
   } finally {
     submitLoading.value = false
-  }
-}
-
-const handleToggle = async (row: SceneItem) => {
-  const actionText = row.status === 1 ? '停用' : '启用'
-
-  try {
-    await ElMessageBox.confirm(`确认${actionText}场景“${row.sceneName}”吗？`, `${actionText}确认`, {
-      type: 'warning',
-      confirmButtonText: `确认${actionText}`,
-      cancelButtonText: '取消',
-    })
-  } catch {
-    return
-  }
-
-  operationLoadingId.value = row.id
-
-  try {
-    await toggleSceneStatus(row.id)
-    ElMessage.success(`${actionText}成功`)
-    await refreshScenePage()
-  } finally {
-    operationLoadingId.value = ''
   }
 }
 
@@ -262,7 +313,6 @@ const handleDelete = async (row: SceneItem) => {
     operationLoadingId.value = ''
   }
 }
-
 onMounted(() => {
   refreshScenePage()
 })
@@ -314,21 +364,23 @@ onMounted(() => {
       />
       <div class="scene-table-card__body">
         <SceneTable
-          :data="sceneList"
+          :data="sortedSceneList"
           :loading="listLoading"
           :page-num="query.pageNum"
           :page-size="query.pageSize"
+          :created-at-sort-order="createdAtSortOrder"
           :operation-loading-id="operationLoadingId"
+          @created-at-sort-change="handleCreatedAtSortChange"
           @edit="openEditDialog"
           @params="openParamPage"
-          @toggle="handleToggle"
+          @templates="openTemplatePage"
           @delete="handleDelete"
         />
       </div>
       <div class="scene-table-card__footer">
         <el-pagination
           background
-          layout="sizes, prev, next"
+          layout="total, sizes, prev, pager, next"
           :current-page="query.pageNum"
           :page-size="query.pageSize"
           :page-sizes="[10, 20, 50, 100]"
@@ -456,5 +508,26 @@ onMounted(() => {
   :deep(.el-pagination__sizes) {
     margin-right: 0;
   }
+
+  :deep(.el-select) {
+    width: 92px;
+  }
+
+  :deep(.el-select__wrapper) {
+    min-height: 28px;
+    padding: 0 8px;
+    border-radius: 7px;
+  }
+
+  :deep(.el-pagination__total) {
+    margin-right: 0;
+    color: var(--app-text-secondary);
+    font-size: 12px;
+  }
+
+  :deep(.el-pager) {
+    margin: 0;
+  }
 }
 </style>
+

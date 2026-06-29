@@ -58,7 +58,7 @@ class TemplateTextInput extends Blockly.FieldTextInput {
 
   override getSize() {
     const size = super.getSize()
-    size.width = Math.min(220, Math.max(size.width, 72))
+    size.width = Math.min(170, Math.max(size.width, 68))
     this.underline?.setAttribute('x2', String(Math.max(8, size.width - 4)))
     return size
   }
@@ -81,10 +81,6 @@ const decimalValidator = (value: string) => {
 
   const decimals = Number(normalized)
   return decimals >= 0 && decimals <= 6 ? normalized : null
-}
-
-interface TextJoinBlock extends Blockly.Block {
-  updateShape_(): void
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -151,6 +147,7 @@ export const registerTemplateBlocks = () => {
           check: 'String',
         },
       ],
+      inputsInline: true,
       style: 'template_structure_blocks',
       tooltip: '模板消息内容入口',
       helpUrl: '',
@@ -194,8 +191,13 @@ export const registerTemplateBlocks = () => {
     },
     {
       type: 'math_arithmetic',
-      message0: '%1 %2 %3',
+      message0: '数学 %1 %2 %3',
       args0: [
+        {
+          type: 'input_value',
+          name: 'A',
+          check: 'Number',
+        },
         {
           type: 'field_dropdown',
           name: 'OP',
@@ -205,11 +207,6 @@ export const registerTemplateBlocks = () => {
             ['×', 'MULTIPLY'],
             ['÷', 'DIVIDE'],
           ],
-        },
-        {
-          type: 'input_value',
-          name: 'A',
-          check: 'Number',
         },
         {
           type: 'input_value',
@@ -225,12 +222,16 @@ export const registerTemplateBlocks = () => {
     },
     {
       type: 'math_modulo',
-      message0: '取余 %1 %2',
+      message0: '数学 %1 %2 %3',
       args0: [
         {
           type: 'input_value',
           name: 'DIVIDEND',
           check: 'Number',
+        },
+        {
+          type: 'field_label',
+          text: '%',
         },
         {
           type: 'input_value',
@@ -246,8 +247,12 @@ export const registerTemplateBlocks = () => {
     },
     {
       type: 'logic_compare',
-      message0: '%1 %2 %3',
+      message0: '比较 %1 %2 %3',
       args0: [
+        {
+          type: 'input_value',
+          name: 'A',
+        },
         {
           type: 'field_dropdown',
           name: 'OP',
@@ -262,10 +267,6 @@ export const registerTemplateBlocks = () => {
         },
         {
           type: 'input_value',
-          name: 'A',
-        },
-        {
-          type: 'input_value',
           name: 'B',
         },
       ],
@@ -277,8 +278,13 @@ export const registerTemplateBlocks = () => {
     },
     {
       type: 'logic_operation',
-      message0: '%1 %2 %3',
+      message0: '逻辑 %1 %2 %3',
       args0: [
+        {
+          type: 'input_value',
+          name: 'A',
+          check: 'Boolean',
+        },
         {
           type: 'field_dropdown',
           name: 'OP',
@@ -286,11 +292,6 @@ export const registerTemplateBlocks = () => {
             ['AND', 'AND'],
             ['OR', 'OR'],
           ],
-        },
-        {
-          type: 'input_value',
-          name: 'A',
-          check: 'Boolean',
         },
         {
           type: 'input_value',
@@ -306,7 +307,7 @@ export const registerTemplateBlocks = () => {
     },
     {
       type: 'logic_negate',
-      message0: 'NOT %1',
+      message0: '逻辑 NOT %1',
       args0: [
         {
           type: 'input_value',
@@ -321,7 +322,7 @@ export const registerTemplateBlocks = () => {
     },
     {
       type: 'string_contains',
-      message0: '字符串 %1 包含 %2',
+      message0: '比较 %1 包含 %2',
       args0: [
         {
           type: 'input_value',
@@ -342,7 +343,7 @@ export const registerTemplateBlocks = () => {
     },
     {
       type: 'string_like',
-      message0: '字符串 %1 匹配 %2',
+      message0: '比较 %1 匹配 %2',
       args0: [
         {
           type: 'input_value',
@@ -416,37 +417,23 @@ export const registerTemplateBlocks = () => {
     },
   ])
 
-  const textJoinDefinition = Blockly.Blocks.text_join
-  if (textJoinDefinition) {
-    const originalInit = textJoinDefinition.init
-    textJoinDefinition.init = function (this: TextJoinBlock) {
-      originalInit.call(this)
-      const originalUpdateShape = this.updateShape_.bind(this)
-      const decorateEmptyInput = () => {
-        const input = this.getInput('EMPTY')
-        if (input && !this.getField('TEXT')) {
-          input
-            .appendField('拼接')
-            .appendField(new TemplateTextInput(''), 'TEXT')
-        }
-      }
-
-      this.updateShape_ = () => {
-        originalUpdateShape()
-        decorateEmptyInput()
-      }
-      decorateEmptyInput()
-    }
+  Blockly.Blocks.text_join = {
+    init() {
+      this.appendValueInput('ADD0').setCheck('String').appendField('拼接')
+      this.appendValueInput('ADD1').setCheck('String').appendField('+')
+      this.setInputsInline(true)
+      this.setOutput(true, 'String')
+      this.setStyle('text_blocks')
+      this.setTooltip('拼接两个文本结果，多段内容可通过多个拼接节点连接')
+    },
   }
 
   Blockly.Blocks.amount_format = {
     init() {
+      this.appendValueInput('VALUE').setCheck('Number').appendField('金额')
       this.appendDummyInput()
-        .appendField('金额')
-        .appendField('格式化（小数位：')
+        .appendField('小数位：')
         .appendField(new TemplateTextInput('2', decimalValidator), 'DECIMALS')
-        .appendField('）')
-      this.appendValueInput('VALUE').setCheck('Number')
       this.setInputsInline(true)
       this.setOutput(true, 'String')
       this.setStyle('format_blocks')
@@ -456,12 +443,10 @@ export const registerTemplateBlocks = () => {
 
   Blockly.Blocks.time_format = {
     init() {
+      this.appendValueInput('VALUE').setCheck(['Time', 'String']).appendField('时间')
       this.appendDummyInput()
-        .appendField('时间')
-        .appendField('格式化（格式：')
+        .appendField('格式：')
         .appendField(new TemplateTextInput('yyyy-MM-dd HH:mm'), 'FORMAT')
-        .appendField('）')
-      this.appendValueInput('VALUE').setCheck(['String', 'Time'])
       this.setInputsInline(true)
       this.setOutput(true, 'String')
       this.setStyle('format_blocks')
@@ -479,12 +464,17 @@ export const registerTemplateBlocks = () => {
         paramLabel: '',
       }
       this.appendDummyInput()
-        .appendField('场景参数')
+        .appendField('参数')
         .appendField(new Blockly.FieldLabelSerializable('参数'), 'PARAM_LABEL')
         .appendField(new Blockly.FieldLabelSerializable(''), 'PARAM_NAME')
       this.setOutput(true, getSceneParamOutputCheck(this.sceneParamState.paramType))
       this.setColour(getSceneParamColour(this.sceneParamState.paramType))
-      this.setTooltip('读取当前模板所属场景的参数值')
+      this.setTooltip(() => {
+        const { paramName, paramType } = this.sceneParamState
+        return [paramName ? `参数名：${paramName}` : '', paramType ? `类型：${paramType}` : '']
+          .filter(Boolean)
+          .join('\n') || '读取当前模板所属场景的参数值'
+      })
     },
     saveExtraState(this: SceneParamBlock): SceneParamExtraState {
       return {
@@ -511,21 +501,40 @@ export const registerTemplateBlocks = () => {
       this.outputConnection?.setCheck(getSceneParamOutputCheck(this.sceneParamState.paramType))
       const paramLabel = this.sceneParamState.paramLabel || this.sceneParamState.paramName || '参数'
       this.setFieldValue(paramLabel, 'PARAM_LABEL')
-      this.setFieldValue(
-        this.sceneParamState.paramName ? `(${this.sceneParamState.paramName})` : '',
-        'PARAM_NAME',
-      )
+      this.setFieldValue('', 'PARAM_NAME')
     },
   }
+
+  // 兼容旧模板中已经保存的 scene_param_ref 类型。
+  Blockly.Blocks.scene_param_ref = Blockly.Blocks.scene_param_value
 
   Blockly.Blocks.text = {
     init() {
       this.appendDummyInput()
-        .appendField('拼接')
+        .appendField('常量')
         .appendField(new TemplateTextInput(''), 'TEXT')
       this.setOutput(true, 'String')
       this.setStyle('text_blocks')
       this.setTooltip('输入需要拼接到消息正文中的文本')
+    },
+  }
+
+  Blockly.Blocks.controls_forEach = {
+    init() {
+      this.appendValueInput('LIST')
+        .setCheck(['StringArray', 'NumberArray'])
+        .appendField('循环')
+        .appendField('for-each')
+      this.appendValueInput('BODY')
+        .setCheck('String')
+        .appendField('输出')
+      this.appendDummyInput()
+        .appendField('分隔符')
+        .appendField(new TemplateTextInput(''), 'SEPARATOR')
+      this.setInputsInline(false)
+      this.setOutput(true, 'String')
+      this.setStyle('loop_expression_blocks')
+      this.setTooltip('遍历字符串数组或数值数组，并拼接每一项的输出')
     },
   }
 
@@ -556,7 +565,7 @@ export const registerTemplateBlocks = () => {
     init(this: LoopItemBlock) {
       this.itemType_ = 'STRING'
       this.appendDummyInput()
-        .appendField('当前')
+        .appendField('循环项')
         .appendField(new Blockly.FieldLabelSerializable('文本项'), 'ITEM_TYPE_LABEL')
       this.setOutput(true, 'String')
       this.setStyle('loop_item_blocks')
@@ -605,7 +614,7 @@ export const registerTemplateBlocks = () => {
   Blockly.Blocks.controls_if = {
     init(this: ControlsIfBlock) {
       this.elseIfCount_ = 0
-      this.hasElse_ = false
+      this.hasElse_ = true
       this.setOutput(true, 'String')
       this.setStyle('logic_expression_blocks')
       this.setTooltip('根据条件返回字符串')
@@ -622,25 +631,20 @@ export const registerTemplateBlocks = () => {
     updateShape_(this: ControlsIfBlock) {
       // 基础 IF0 / DO0 永远存在；动态分支在它后面按顺序追加。
       if (!this.getInput('IF0')) {
-        this.appendDummyInput('ROW_IF0').appendField('如果')
-        this.appendValueInput('IF0').setCheck('Boolean')
-        this.appendDummyInput('ROW_DO0').appendField('则输出')
-        this.appendValueInput('DO0').setCheck('String')
+        this.appendValueInput('IF0').setCheck('Boolean').appendField('条件').appendField('if')
+        this.appendValueInput('DO0').setCheck('String').appendField('则')
       }
 
       // 清理已有的动态分支输入，避免重复
       this.removeDynamicInputs_()
 
       for (let i = 1; i <= this.elseIfCount_; i++) {
-        this.appendDummyInput(`ROW_IF${i}`).appendField('否则如果')
-        this.appendValueInput(`IF${i}`).setCheck('Boolean')
-        this.appendDummyInput(`ROW_DO${i}`).appendField('则输出')
-        this.appendValueInput(`DO${i}`).setCheck('String')
+        this.appendValueInput(`IF${i}`).setCheck('Boolean').appendField('否则如果')
+        this.appendValueInput(`DO${i}`).setCheck('String').appendField('则')
       }
 
       if (this.hasElse_) {
-        this.appendDummyInput('ROW_ELSE').appendField('否则输出')
-        this.appendValueInput('ELSE').setCheck('String')
+        this.appendValueInput('ELSE').setCheck('String').appendField('否则')
       }
     },
 
@@ -779,7 +783,7 @@ export const registerTemplateBlocks = () => {
     loadExtraState(this: ControlsIfBlock, state: unknown) {
       if (!isRecord(state)) {
         this.elseIfCount_ = 0
-        this.hasElse_ = false
+        this.hasElse_ = true
         this.updateShape_()
         return
       }
@@ -797,6 +801,7 @@ export const registerTemplateBlocks = () => {
   const chainBlockTypes = [
     'message_content',
     'scene_param_value',
+    'scene_param_ref',
     'text',
     'text_join',
     'amount_format',
@@ -835,9 +840,10 @@ export const syncSceneParamBlockLabels = (
   toolboxData: TemplateToolboxData,
 ) => {
   const paramsById = new Map(toolboxData.params.map((param) => [param.paramId, param]))
+  const paramsByName = new Map(toolboxData.params.map((param) => [param.paramName, param]))
 
   workspace.getAllBlocks(false).forEach((block) => {
-    if (block.type !== 'scene_param_value') {
+    if (block.type !== 'scene_param_value' && block.type !== 'scene_param_ref') {
       return
     }
 
@@ -848,12 +854,61 @@ export const syncSceneParamBlockLabels = (
     }
 
     const param = paramsById.get(readString(extraState.paramId))
+      ?? paramsByName.get(readString(extraState.paramName))
 
     if (!param) {
       return
     }
 
     block.setFieldValue(param.paramLabel || param.paramName, 'PARAM_LABEL')
-    block.setFieldValue(param.paramName ? `(${param.paramName})` : '', 'PARAM_NAME')
+    block.setFieldValue('', 'PARAM_NAME')
+  })
+}
+
+export const validateSceneParamBlocks = (
+  workspace: Blockly.WorkspaceSvg,
+  toolboxData: TemplateToolboxData,
+) => {
+  const paramsByName = new Map(toolboxData.params.map((param) => [param.paramName, param]))
+
+  workspace.getAllBlocks(false).forEach((block) => {
+    if (block.type !== 'scene_param_value' && block.type !== 'scene_param_ref') {
+      return
+    }
+
+    const extraState: unknown = block.saveExtraState?.()
+
+    if (!isRecord(extraState)) {
+      block.setWarningText('参数 paramName 为空', 'scene-param')
+      return
+    }
+
+    const paramName = readString(extraState.paramName)
+    const sceneId = readString(extraState.sceneId)
+    const paramType = readString(extraState.paramType)
+
+    if (!paramName) {
+      block.setWarningText('参数 paramName 为空', 'scene-param')
+      return
+    }
+
+    if (sceneId && sceneId !== toolboxData.sceneId) {
+      block.setWarningText(`参数 ${paramName} 不属于当前场景`, 'scene-param')
+      return
+    }
+
+    const param = paramsByName.get(paramName)
+
+    if (!param) {
+      block.setWarningText(`参数 ${paramName} 已不存在`, 'scene-param')
+      return
+    }
+
+    if (paramType && param.paramType !== paramType) {
+      block.setWarningText(`参数 ${paramName} 的类型与当前积木不匹配`, 'scene-param')
+      return
+    }
+
+    block.setWarningText(null, 'scene-param')
   })
 }

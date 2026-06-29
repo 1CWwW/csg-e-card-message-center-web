@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { reactive, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { previewTemplate } from '../../../api/template'
+import { BLOCKLY_SCHEMA_VERSION } from '../blockly/workspace'
 import type {
   BlocklyWorkspaceState,
   TemplatePreviewResult,
@@ -30,6 +31,16 @@ const emit = defineEmits<{
 const values = reactive<Record<string, PreviewInputValue>>({})
 const previewing = ref(false)
 const result = ref<TemplatePreviewResult | null>(null)
+const previewError = ref('')
+let disposed = false
+
+const sortedParams = computed(() =>
+  [...props.params].sort(
+    (current, next) =>
+      (current.sortOrder ?? Number.MAX_SAFE_INTEGER) -
+      (next.sortOrder ?? Number.MAX_SAFE_INTEGER),
+  ),
+)
 
 const createInitialValue = (paramType: string): PreviewInputValue => {
   if (paramType === 'NUMBER') {
@@ -49,10 +60,11 @@ const createInitialValue = (paramType: string): PreviewInputValue => {
 
 const resetValues = () => {
   Object.keys(values).forEach((key) => delete values[key])
-  props.params.forEach((param) => {
+  sortedParams.value.forEach((param) => {
     values[param.paramName] = createInitialValue(param.paramType)
   })
   result.value = null
+  previewError.value = ''
 }
 
 const isEmptyValue = (value: PreviewInputValue) => {
@@ -70,7 +82,7 @@ const isEmptyValue = (value: PreviewInputValue) => {
 const buildPreviewValues = () => {
   const requestValues: Record<string, TemplatePreviewValue> = {}
 
-  for (const param of props.params) {
+  for (const param of sortedParams.value) {
     const value = values[param.paramName]
 
     if (param.isRequired === 1 && isEmptyValue(value)) {
@@ -123,22 +135,36 @@ const submitPreview = async () => {
   }
 
   previewing.value = true
+  previewError.value = ''
 
   try {
     const previewResult = await previewTemplate({
       templateId: props.templateId,
-      schemaVersion: 1,
+      schemaVersion: BLOCKLY_SCHEMA_VERSION,
       workspace: props.workspace,
       values: requestValues,
     })
+
+    if (disposed) {
+      return
+    }
+
     result.value = {
       ...previewResult,
       renderedContent: previewResult.renderedContent ?? '',
       usedParams: previewResult.usedParams ?? [],
       warnings: previewResult.warnings ?? [],
     }
+  } catch (error) {
+    const message = error instanceof Error && error.message
+      ? error.message
+      : '模板预览失败，请稍后重试'
+    previewError.value = message
+    ElMessage.error(message)
   } finally {
-    previewing.value = false
+    if (!disposed) {
+      previewing.value = false
+    }
   }
 }
 
@@ -186,6 +212,10 @@ watch(
     }
   },
 )
+
+onBeforeUnmount(() => {
+  disposed = true
+})
 </script>
 
 <template>
@@ -212,11 +242,20 @@ watch(
           </el-button>
         </div>
 
-        <el-empty v-if="params.length === 0" description="当前场景暂无示例参数" :image-size="50" />
+        <el-alert
+          v-if="previewError"
+          class="template-preview-dialog__alert"
+          type="error"
+          show-icon
+          :closable="false"
+          :title="previewError"
+        />
+
+        <el-empty v-if="sortedParams.length === 0" description="当前场景暂无示例参数" :image-size="50" />
 
         <el-form v-else label-position="top">
           <el-form-item
-            v-for="param in params"
+            v-for="param in sortedParams"
             :key="param.paramId"
             :required="param.isRequired === 1"
             :label="param.paramLabel || param.paramName"
@@ -340,6 +379,10 @@ watch(
   color: var(--app-text-primary);
   font-size: 15px;
   font-weight: 700;
+}
+
+.template-preview-dialog__alert {
+  margin-bottom: 14px;
 }
 
 .template-preview-dialog__param-name {

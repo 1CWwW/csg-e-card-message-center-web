@@ -543,7 +543,7 @@ onMounted(() => {
   }
 
   :deep(.el-table__cell) {
-    padding: 9px 0;
+    padding: 15px 0;
     font-size: 12px;
   }
 
@@ -648,6 +648,36 @@ onMounted(() => {
   > span {
     color: var(--app-text-placeholder);
     font-size: 12px;
+  }
+
+  :deep(.el-pagination) {
+    --el-pagination-button-width: 32px;
+    --el-pagination-button-height: 28px;
+    gap: 8px;
+  }
+
+  :deep(.el-pagination__sizes) {
+    margin-right: 0;
+  }
+
+  :deep(.el-select) {
+    width: 92px;
+  }
+
+  :deep(.el-select__wrapper) {
+    min-height: 28px;
+    padding: 0 8px;
+    border-radius: 7px;
+  }
+
+  :deep(.el-pagination__total) {
+    margin-right: 0;
+    color: var(--app-text-secondary);
+    font-size: 12px;
+  }
+
+  :deep(.el-pager) {
+    margin: 0;
   }
 }
 

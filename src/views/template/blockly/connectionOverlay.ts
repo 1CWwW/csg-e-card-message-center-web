@@ -86,13 +86,7 @@ export class TemplateConnectionOverlay {
       card.setAttribute('ry', '9')
     })
 
-    const renderedConnections = blocks
-      .flatMap((block) => block.getConnections_(true))
-      .filter(
-        (connection) =>
-          connection.type === Blockly.ConnectionType.PREVIOUS_STATEMENT ||
-          connection.type === Blockly.ConnectionType.NEXT_STATEMENT,
-      )
+    const renderedConnections = blocks.flatMap((block) => block.getConnections_(true))
 
     const renderedPairs = new Set<string>()
 
@@ -101,17 +95,23 @@ export class TemplateConnectionOverlay {
       const port = createSvgElement('circle', 'template-connection-port')
       port.setAttribute('cx', String(point.x))
       port.setAttribute('cy', String(point.y))
-      port.setAttribute('r', '5')
+      port.setAttribute('r', '4')
       port.style.setProperty('--connection-colour', getConnectionColour(connection))
-      port.addEventListener('pointerdown', (event) => {
-        event.preventDefault()
-        event.stopPropagation()
-      })
-      port.addEventListener('click', (event) => {
-        event.preventDefault()
-        event.stopPropagation()
-        this.handleConnectionClick(connection)
-      })
+      if (
+        connection.type === Blockly.ConnectionType.PREVIOUS_STATEMENT ||
+        connection.type === Blockly.ConnectionType.NEXT_STATEMENT
+      ) {
+        port.classList.add('is-statement')
+        port.addEventListener('pointerdown', (event) => {
+          event.preventDefault()
+          event.stopPropagation()
+        })
+        port.addEventListener('click', (event) => {
+          event.preventDefault()
+          event.stopPropagation()
+          this.handleConnectionClick(connection)
+        })
+      }
 
       if (connection.isConnected()) {
         port.classList.add('is-connected')

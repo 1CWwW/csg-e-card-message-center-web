@@ -183,7 +183,7 @@ const handleSortBlur = (row: SceneParamItem, event: FocusEvent) => {
   }
 
   :deep(.el-table__cell) {
-    padding: 12px 0;
+    padding: 8px 0;
     font-size: 13px;
   }
 

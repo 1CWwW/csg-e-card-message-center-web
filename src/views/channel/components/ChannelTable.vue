@@ -137,7 +137,7 @@ const getTypeConfigSummary = (row: ChannelItem) => {
   }
 
   :deep(.el-table__cell) {
-    padding: 12px 0;
+    padding: 6px 0;
     font-size: 13px;
   }
 

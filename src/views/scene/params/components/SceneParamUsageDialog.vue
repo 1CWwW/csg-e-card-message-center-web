@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { SceneParamItem, SceneParamUsage } from '../../../../types/scene-param'
+import type { SceneParamItem, SceneParamUsage, SceneParamUsageTemplate } from '../../../../types/scene-param'
 
 defineProps<{
   modelValue: boolean
@@ -10,6 +10,10 @@ defineProps<{
 const emit = defineEmits<{
   'update:modelValue': [value: boolean]
 }>()
+
+const getUsageTemplateText = (template: SceneParamUsageTemplate) => {
+  return template.templateName || template.templateId || '-'
+}
 </script>
 
 <template>
@@ -29,14 +33,18 @@ const emit = defineEmits<{
 
       <div v-if="paramDetail" class="scene-param-usage__meta">
         <span>参数名：{{ paramDetail.paramName }}</span>
-        <span>显示名称：{{ paramDetail.paramLabel }}</span>
+        <span>参数显示名：{{ paramDetail.paramLabel }}</span>
         <span>引用数量：{{ usageInfo?.usageCount || 0 }}</span>
       </div>
 
       <div v-if="usageInfo?.templates.length" class="scene-param-usage__templates">
         <span class="scene-param-usage__label">引用模板</span>
-        <el-tag v-for="templateName in usageInfo.templates" :key="templateName" effect="plain">
-          {{ templateName }}
+        <el-tag
+          v-for="template in usageInfo.templates"
+          :key="template.templateId || template.templateName"
+          effect="plain"
+        >
+          {{ getUsageTemplateText(template) }}
         </el-tag>
       </div>
     </div>

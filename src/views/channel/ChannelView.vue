@@ -362,7 +362,7 @@ onMounted(() => {
       <div class="channel-table-card__footer">
         <el-pagination
           background
-          layout="sizes, prev, next"
+          layout="total, sizes, prev, pager, next"
           :current-page="query.pageNum"
           :page-size="query.pageSize"
           :page-sizes="[10, 20, 50, 100]"
@@ -520,6 +520,26 @@ onMounted(() => {
 
   :deep(.el-pagination__sizes) {
     margin-right: 0;
+  }
+
+  :deep(.el-select) {
+    width: 92px;
+  }
+
+  :deep(.el-select__wrapper) {
+    min-height: 28px;
+    padding: 0 8px;
+    border-radius: 7px;
+  }
+
+  :deep(.el-pagination__total) {
+    margin-right: 0;
+    color: var(--app-text-secondary);
+    font-size: 12px;
+  }
+
+  :deep(.el-pager) {
+    margin: 0;
   }
 }
 </style>

@@ -1,4 +1,5 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
+import { CaretBottom, CaretTop } from '@element-plus/icons-vue'
 import { getSceneModuleLabel, type SceneItem } from '../../../types/scene'
 
 defineProps<{
@@ -6,14 +7,16 @@ defineProps<{
   loading: boolean
   pageNum: number
   pageSize: number
+  createdAtSortOrder: 'ascending' | 'descending' | null
   operationLoadingId: string
 }>()
 
 const emit = defineEmits<{
   edit: [row: SceneItem]
   params: [row: SceneItem]
-  toggle: [row: SceneItem]
+  templates: [row: SceneItem]
   delete: [row: SceneItem]
+  'created-at-sort-change': []
 }>()
 
 const getStatusType = (status: number) => {
@@ -62,10 +65,14 @@ const formatDateTime = (value: string) => {
         <span class="scene-table__code">{{ row.sceneCode }}</span>
       </template>
     </el-table-column>
-    <el-table-column label="场景名称" prop="sceneName" min-width="150" show-overflow-tooltip />
+    <el-table-column label="场景名称" prop="sceneName" min-width="150" show-overflow-tooltip>
+      <template #default="{ row }">
+        <span class="scene-table__plain-text">{{ row.sceneName }}</span>
+      </template>
+    </el-table-column>
     <el-table-column label="所属模块" width="112" show-overflow-tooltip>
       <template #default="{ row }">
-        {{ getSceneModuleLabel(row.module, row.moduleDesc) }}
+        <span class="scene-table__plain-text">{{ getSceneModuleLabel(row.module, row.moduleDesc) }}</span>
       </template>
     </el-table-column>
     <el-table-column label="参数数量" prop="paramCount" width="78" align="center">
@@ -75,7 +82,13 @@ const formatDateTime = (value: string) => {
         </el-button>
       </template>
     </el-table-column>
-    <el-table-column label="关联模板" prop="templateCount" width="78" align="center" />
+    <el-table-column label="关联模板" prop="templateCount" width="78" align="center">
+      <template #default="{ row }">
+        <el-button class="scene-table__template-link" link type="primary" @click="emit('templates', row)">
+          {{ row.templateCount }}
+        </el-button>
+      </template>
+    </el-table-column>
     <el-table-column label="状态" width="74" align="center">
       <template #default="{ row }">
         <el-tag
@@ -89,12 +102,28 @@ const formatDateTime = (value: string) => {
         </el-tag>
       </template>
     </el-table-column>
-    <el-table-column label="创建时间" width="158">
+    <el-table-column width="158">
+      <template #header>
+        <button class="scene-table__sort-header" type="button" @click="emit('created-at-sort-change')">
+          <span>创建时间</span>
+          <span
+            class="scene-table__sort-icons"
+            :class="createdAtSortOrder === null ? 'is-default' : ''"
+          >
+            <el-icon :class="{ 'is-active': createdAtSortOrder === 'ascending' }">
+              <CaretTop />
+            </el-icon>
+            <el-icon :class="{ 'is-active': createdAtSortOrder === 'descending' || createdAtSortOrder === null }">
+              <CaretBottom />
+            </el-icon>
+          </span>
+        </button>
+      </template>
       <template #default="{ row }">
         {{ formatDateTime(row.createdAt) }}
       </template>
     </el-table-column>
-    <el-table-column class-name="scene-table__operation-column" label="操作" width="126" align="center">
+    <el-table-column class-name="scene-table__operation-column" label="操作" width="124" align="center">
       <template #default="{ row }">
         <div class="scene-table__actions">
           <el-button
@@ -142,7 +171,7 @@ const formatDateTime = (value: string) => {
   }
 
   :deep(.el-table__cell) {
-    padding: 15px 0;
+    padding: 5px 0;
     font-size: 13px;
   }
 
@@ -162,18 +191,56 @@ const formatDateTime = (value: string) => {
   }
 }
 
+.scene-table__sort-header {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+}
+
+.scene-table__sort-icons {
+  display: inline-grid;
+  gap: 0;
+  color: #c1cad8;
+  font-size: 10px;
+  line-height: 1;
+
+  .el-icon {
+    width: 10px;
+    height: 8px;
+  }
+
+  .is-active {
+    color: var(--app-color-primary);
+  }
+
+  &.is-default .is-active {
+    color: #8da0ba;
+  }
+}
+
 .scene-table__code {
   color: var(--app-color-primary);
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', monospace;
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 400;
+}
+
+.scene-table__plain-text {
+  color: #000000;
 }
 
 .scene-table__param-link,
+.scene-table__template-link,
 .scene-table__params-action {
   --el-button-text-color: var(--app-color-info);
   --el-button-hover-text-color: var(--app-color-primary);
-  font-weight: 600;
+  font-weight: 400;
 }
 
 .scene-table__status {
@@ -200,7 +267,7 @@ const formatDateTime = (value: string) => {
   grid-template-columns: repeat(3, 22px);
   align-items: center;
   justify-content: center;
-  gap: 16px;
+  gap: 12px;
   min-height: 48px;
 
   :deep(.el-button) {
@@ -214,9 +281,12 @@ const formatDateTime = (value: string) => {
   min-width: 22px;
   min-height: 40px;
   padding: 0;
+  font-size: 12px;
+  font-weight: 400;
   writing-mode: vertical-rl;
   text-orientation: upright;
   line-height: 1.12;
   letter-spacing: 0;
 }
 </style>
+

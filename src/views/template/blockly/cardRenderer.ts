@@ -5,13 +5,13 @@ const RENDERER_NAME = 'templateCardRenderer'
 class TemplateCardConstants extends Blockly.zelos.ConstantProvider {
   constructor() {
     super(4)
-    this.CORNER_RADIUS = 9
-    this.MIN_BLOCK_HEIGHT = 36
-    this.MIN_BLOCK_WIDTH = 110
-    this.DUMMY_INPUT_MIN_HEIGHT = 32
-    this.DUMMY_INPUT_SHADOW_MIN_HEIGHT = 32
-    this.EMPTY_INLINE_INPUT_HEIGHT = 28
-    this.FIELD_BORDER_RECT_HEIGHT = 24
+    this.CORNER_RADIUS = 8
+    this.MIN_BLOCK_HEIGHT = 30
+    this.MIN_BLOCK_WIDTH = 88
+    this.DUMMY_INPUT_MIN_HEIGHT = 24
+    this.DUMMY_INPUT_SHADOW_MIN_HEIGHT = 24
+    this.EMPTY_INLINE_INPUT_HEIGHT = 22
+    this.FIELD_BORDER_RECT_HEIGHT = 20
     this.FIELD_TEXT_FONTSIZE = 12
     this.FIELD_TEXT_FONTWEIGHT = '500'
     this.FIELD_TEXT_FONTFAMILY = '"Microsoft YaHei", "PingFang SC", sans-serif'

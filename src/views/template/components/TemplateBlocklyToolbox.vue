@@ -6,6 +6,7 @@ export interface TemplateToolboxBlockState {
   type: string
   fields?: Record<string, string>
   extraState?: Record<string, string>
+  inputs?: Record<string, { block: TemplateToolboxBlockState }>
 }
 
 interface ToolboxItem {
@@ -14,6 +15,7 @@ interface ToolboxItem {
   tag: string
   colour: string
   tagClass: string
+  title?: string
   state: TemplateToolboxBlockState
 }
 
@@ -43,6 +45,14 @@ const getParamStyle = (param: TemplateToolboxParam) => {
   return { colour: '#5ba58c', tagClass: 'is-string' }
 }
 
+const sortedParams = computed(() =>
+  [...props.toolboxData.params].sort(
+    (current, next) =>
+      (current.sortOrder ?? Number.MAX_SAFE_INTEGER) -
+      (next.sortOrder ?? Number.MAX_SAFE_INTEGER),
+  ),
+)
+
 const groups = computed<ToolboxGroup[]>(() => [
   {
     key: 'structure',
@@ -61,7 +71,7 @@ const groups = computed<ToolboxGroup[]>(() => [
   {
     key: 'params',
     title: '场景参数',
-    items: props.toolboxData.params.map((param) => {
+    items: sortedParams.value.map((param) => {
       const style = getParamStyle(param)
       return {
         key: param.paramId,
@@ -69,11 +79,12 @@ const groups = computed<ToolboxGroup[]>(() => [
         tag: param.paramType,
         colour: style.colour,
         tagClass: style.tagClass,
+        title: param.paramName,
         state: {
           type: 'scene_param_value',
           fields: {
             PARAM_LABEL: param.paramLabel || param.paramName,
-            PARAM_NAME: param.paramName ? `(${param.paramName})` : '',
+            PARAM_NAME: '',
           },
           extraState: {
             sceneId: props.toolboxData.sceneId,
@@ -92,8 +103,8 @@ const groups = computed<ToolboxGroup[]>(() => [
     items: [
       {
         key: 'text',
-        label: '字符串常量',
-        tag: '输入文本',
+        label: '常量',
+        tag: '请输入文本',
         colour: '#3f7bf3',
         tagClass: 'is-text',
         state: {
@@ -103,8 +114,8 @@ const groups = computed<ToolboxGroup[]>(() => [
       },
       {
         key: 'text_join',
-        label: '字符串拼接',
-        tag: '多段拼接',
+        label: '拼接',
+        tag: '请输入文本',
         colour: '#3f7bf3',
         tagClass: 'is-text',
         state: { type: 'text_join' },
@@ -116,9 +127,17 @@ const groups = computed<ToolboxGroup[]>(() => [
     title: '逻辑',
     items: [
       {
+        key: 'controls_if',
+        label: '条件',
+        tag: 'if / else',
+        colour: '#f59e0b',
+        tagClass: 'is-logic',
+        state: { type: 'controls_if' },
+      },
+      {
         key: 'logic_operation_and',
-        label: 'AND',
-        tag: '且',
+        label: '逻辑',
+        tag: 'AND',
         colour: '#f59e0b',
         tagClass: 'is-logic',
         state: {
@@ -127,31 +146,12 @@ const groups = computed<ToolboxGroup[]>(() => [
         },
       },
       {
-        key: 'logic_operation_or',
-        label: 'OR',
-        tag: '或',
-        colour: '#f59e0b',
-        tagClass: 'is-logic',
-        state: {
-          type: 'logic_operation',
-          fields: { OP: 'OR' },
-        },
-      },
-      {
         key: 'logic_negate',
-        label: 'NOT',
-        tag: '取反',
+        label: '逻辑',
+        tag: 'NOT',
         colour: '#f59e0b',
         tagClass: 'is-logic',
         state: { type: 'logic_negate' },
-      },
-      {
-        key: 'controls_if',
-        label: '条件分支',
-        tag: 'STRING',
-        colour: '#f59e0b',
-        tagClass: 'is-logic',
-        state: { type: 'controls_if' },
       },
     ],
   },
@@ -160,9 +160,25 @@ const groups = computed<ToolboxGroup[]>(() => [
     title: '比较运算',
     items: [
       {
+        key: 'logic_compare_gt',
+        label: '比较',
+        tag: '大于 >',
+        colour: '#1098b5',
+        tagClass: 'is-compare',
+        state: { type: 'logic_compare', fields: { OP: 'GT' } },
+      },
+      {
+        key: 'logic_compare_lt',
+        label: '比较',
+        tag: '小于 <',
+        colour: '#1098b5',
+        tagClass: 'is-compare',
+        state: { type: 'logic_compare', fields: { OP: 'LT' } },
+      },
+      {
         key: 'logic_compare_eq',
-        label: '等于',
-        tag: '=',
+        label: '比较',
+        tag: '等于 =',
         colour: '#1098b5',
         tagClass: 'is-compare',
         state: {
@@ -172,114 +188,27 @@ const groups = computed<ToolboxGroup[]>(() => [
       },
       {
         key: 'logic_compare_neq',
-        label: '不等于',
-        tag: '≠',
+        label: '比较',
+        tag: '不等于 !=',
         colour: '#1098b5',
         tagClass: 'is-compare',
         state: { type: 'logic_compare', fields: { OP: 'NEQ' } },
       },
       {
-        key: 'logic_compare_lt',
-        label: '小于',
-        tag: '<',
-        colour: '#1098b5',
-        tagClass: 'is-compare',
-        state: { type: 'logic_compare', fields: { OP: 'LT' } },
-      },
-      {
-        key: 'logic_compare_lte',
-        label: '小于等于',
-        tag: '≤',
-        colour: '#1098b5',
-        tagClass: 'is-compare',
-        state: { type: 'logic_compare', fields: { OP: 'LTE' } },
-      },
-      {
-        key: 'logic_compare_gt',
-        label: '大于',
-        tag: '>',
-        colour: '#1098b5',
-        tagClass: 'is-compare',
-        state: { type: 'logic_compare', fields: { OP: 'GT' } },
-      },
-      {
-        key: 'logic_compare_gte',
-        label: '大于等于',
-        tag: '≥',
-        colour: '#1098b5',
-        tagClass: 'is-compare',
-        state: { type: 'logic_compare', fields: { OP: 'GTE' } },
-      },
-    ],
-  },
-  {
-    key: 'string-judge',
-    title: '字符串判断',
-    items: [
-      {
         key: 'string_contains',
-        label: '字符串包含',
-        tag: '字符串',
-        colour: '#24a39a',
-        tagClass: 'is-string-judge',
+        label: '比较',
+        tag: '包含 in',
+        colour: '#1098b5',
+        tagClass: 'is-compare',
         state: { type: 'string_contains' },
       },
       {
         key: 'string_like',
-        label: '模糊匹配',
-        tag: '% 通配符',
-        colour: '#24a39a',
-        tagClass: 'is-string-judge',
+        label: '比较',
+        tag: '匹配 like',
+        colour: '#1098b5',
+        tagClass: 'is-compare',
         state: { type: 'string_like' },
-      },
-    ],
-  },
-  {
-    key: 'math',
-    title: '数学运算',
-    items: [
-      {
-        key: 'math_arithmetic_add',
-        label: '加法',
-        tag: '+',
-        colour: '#7558d6',
-        tagClass: 'is-math',
-        state: {
-          type: 'math_arithmetic',
-          fields: { OP: 'ADD' },
-        },
-      },
-      {
-        key: 'math_arithmetic_minus',
-        label: '减法',
-        tag: '−',
-        colour: '#7558d6',
-        tagClass: 'is-math',
-        state: { type: 'math_arithmetic', fields: { OP: 'MINUS' } },
-      },
-      {
-        key: 'math_arithmetic_multiply',
-        label: '乘法',
-        tag: '×',
-        colour: '#7558d6',
-        tagClass: 'is-math',
-        state: { type: 'math_arithmetic', fields: { OP: 'MULTIPLY' } },
-      },
-      {
-        key: 'math_arithmetic_divide',
-        label: '除法',
-        tag: '÷',
-        colour: '#7558d6',
-        tagClass: 'is-math',
-        state: { type: 'math_arithmetic', fields: { OP: 'DIVIDE' } },
-      },
-      {
-        key: 'math_modulo',
-        label: '取余',
-        tag: '%',
-        colour: '#7558d6',
-        tagClass: 'is-math',
-        state: { type: 'math_modulo' },
       },
     ],
   },
@@ -289,36 +218,71 @@ const groups = computed<ToolboxGroup[]>(() => [
     items: [
       {
         key: 'controls_forEach',
-        label: '遍历数组',
-        tag: '循环',
+        label: '循环',
+        tag: 'for-each',
         colour: '#8457e8',
         tagClass: 'is-loop',
         state: {
           type: 'controls_forEach',
           fields: { SEPARATOR: '' },
+          inputs: {
+            BODY: {
+              block: {
+                type: 'loop_item_value',
+                extraState: { itemType: 'STRING' },
+              },
+            },
+          },
+        },
+      },
+    ],
+  },
+  {
+    key: 'math',
+    title: '数学运算',
+    items: [
+      {
+        key: 'math_arithmetic_add',
+        label: '数学',
+        tag: '加法 +',
+        colour: '#2fc46b',
+        tagClass: 'is-math',
+        state: {
+          type: 'math_arithmetic',
+          fields: { OP: 'ADD' },
         },
       },
       {
-        key: 'loop_item_value_string',
-        label: '当前文本元素',
-        tag: 'STRING',
-        colour: '#9a73eb',
-        tagClass: 'is-loop',
-        state: {
-          type: 'loop_item_value',
-          extraState: { itemType: 'STRING' },
-        },
+        key: 'math_arithmetic_minus',
+        label: '数学',
+        tag: '减法 −',
+        colour: '#2fc46b',
+        tagClass: 'is-math',
+        state: { type: 'math_arithmetic', fields: { OP: 'MINUS' } },
       },
       {
-        key: 'loop_item_value_number',
-        label: '当前数值元素',
-        tag: 'NUMBER',
-        colour: '#9a73eb',
-        tagClass: 'is-loop',
-        state: {
-          type: 'loop_item_value',
-          extraState: { itemType: 'NUMBER' },
-        },
+        key: 'math_arithmetic_multiply',
+        label: '数学',
+        tag: '乘法 ×',
+        colour: '#2fc46b',
+        tagClass: 'is-math',
+        state: { type: 'math_arithmetic', fields: { OP: 'MULTIPLY' } },
+      },
+      {
+        key: 'math_arithmetic_divide',
+        label: '数学',
+        tag: '除法 ÷',
+        colour: '#2fc46b',
+        tagClass: 'is-math',
+        state: { type: 'math_arithmetic', fields: { OP: 'DIVIDE' } },
+      },
+      {
+        key: 'math_modulo',
+        label: '数学',
+        tag: '取余 %',
+        colour: '#2fc46b',
+        tagClass: 'is-math',
+        state: { type: 'math_modulo' },
       },
     ],
   },
@@ -328,15 +292,15 @@ const groups = computed<ToolboxGroup[]>(() => [
     items: [
       {
         key: 'amount_format',
-        label: '金额格式化',
-        tag: '¥12.50元',
+        label: '金额',
+        tag: '小数位：2',
         colour: '#e8a110',
         tagClass: 'is-format',
         state: { type: 'amount_format' },
       },
       {
         key: 'time_format',
-        label: '时间格式化',
+        label: '时间',
         tag: 'yyyy-MM-dd',
         colour: '#e8a110',
         tagClass: 'is-format',
@@ -377,6 +341,7 @@ const handleDragStart = (event: DragEvent, state: TemplateToolboxBlockState) => 
           class="template-blockly-toolbox__item"
           type="button"
           draggable="true"
+          :title="item.title || item.label"
           @click="emit('add', item.state)"
           @dragstart="handleDragStart($event, item.state)"
         >
@@ -401,29 +366,44 @@ const handleDragStart = (event: DragEvent, state: TemplateToolboxBlockState) => 
 <style scoped lang="scss">
 .template-blockly-toolbox {
   box-sizing: border-box;
-  width: 230px;
-  min-width: 230px;
-  max-width: 230px;
-  padding: 12px 10px 18px;
+  width: 250px;
+  min-width: 250px;
+  max-width: 250px;
+  padding: 8px 10px 12px;
   overflow-x: hidden;
   overflow-y: auto;
   border-right: 1px solid #e5eaf1;
   background: #f8fafc;
+  scrollbar-color: #c8d2df transparent;
+  scrollbar-width: thin;
+}
+
+.template-blockly-toolbox::-webkit-scrollbar {
+  width: 6px;
+}
+
+.template-blockly-toolbox::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.template-blockly-toolbox::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: #c8d2df;
 }
 
 .template-blockly-toolbox__group + .template-blockly-toolbox__group {
-  margin-top: 12px;
+  margin-top: 10px;
 }
 
 .template-blockly-toolbox__title {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  height: 34px;
+  height: 28px;
   padding: 0 4px;
   color: #8799b5;
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .template-blockly-toolbox__title span:last-child {
@@ -432,7 +412,7 @@ const handleDragStart = (event: DragEvent, state: TemplateToolboxBlockState) => 
 
 .template-blockly-toolbox__items {
   display: grid;
-  gap: 6px;
+  gap: 7px;
 }
 
 .template-blockly-toolbox__item {
@@ -442,7 +422,7 @@ const handleDragStart = (event: DragEvent, state: TemplateToolboxBlockState) => 
   width: 100%;
   min-height: 42px;
   padding: 0 9px;
-  border: 1px solid #e2e7ef;
+  border: 1px solid #dfe7f0;
   border-radius: 8px;
   background: #ffffff;
   color: #344054;
@@ -457,8 +437,7 @@ const handleDragStart = (event: DragEvent, state: TemplateToolboxBlockState) => 
 .template-blockly-toolbox__item:focus-visible {
   border-color: #9eb8ed;
   outline: none;
-  box-shadow: 0 2px 6px rgb(55 72 103 / 8%);
-  transform: translateY(-1px);
+  box-shadow: 0 0 0 1px rgb(64 116 255 / 12%);
 }
 
 .template-blockly-toolbox__item:active {
@@ -466,16 +445,25 @@ const handleDragStart = (event: DragEvent, state: TemplateToolboxBlockState) => 
 }
 
 .template-blockly-toolbox__colour {
-  width: 10px;
-  height: 10px;
-  border-radius: 3px;
+  width: 8px;
+  height: 24px;
+  border-radius: 5px;
   flex: none;
+  opacity: 0.85;
 }
 
 .template-blockly-toolbox__label {
-  flex: 1;
+  flex: none;
+  min-width: 0;
+  max-width: 76px;
   overflow: hidden;
-  font-size: 13px;
+  padding: 3px 7px;
+  border-radius: 6px;
+  background: #f6f8fb;
+  color: #23314a;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 18px;
   text-align: left;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -483,12 +471,17 @@ const handleDragStart = (event: DragEvent, state: TemplateToolboxBlockState) => 
 
 .template-blockly-toolbox__tag {
   flex: none;
+  max-width: 110px;
+  overflow: hidden;
   padding: 3px 6px;
   border-radius: 4px;
   background: #f1f5f9;
   color: #7d91ad;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 600;
+  line-height: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .template-blockly-toolbox__tag.is-string {
@@ -537,8 +530,8 @@ const handleDragStart = (event: DragEvent, state: TemplateToolboxBlockState) => 
 }
 
 .template-blockly-toolbox__tag.is-math {
-  background: #f2effd;
-  color: #7558d6;
+  background: #eafaf1;
+  color: #2fc46b;
 }
 
 .template-blockly-toolbox__tag.is-loop {
@@ -555,9 +548,9 @@ const handleDragStart = (event: DragEvent, state: TemplateToolboxBlockState) => 
 
 @media (max-width: 1180px) {
   .template-blockly-toolbox {
-    width: 210px;
-    min-width: 210px;
-    max-width: 210px;
+    width: 240px;
+    min-width: 240px;
+    max-width: 240px;
   }
 }
 </style>
