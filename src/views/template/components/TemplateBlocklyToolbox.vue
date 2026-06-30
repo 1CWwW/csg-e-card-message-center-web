@@ -38,8 +38,12 @@ const getParamStyle = (param: TemplateToolboxParam) => {
     return { colour: '#5b7aa5', tagClass: 'is-number' }
   }
 
+  if (param.paramType === 'TIME') {
+    return { colour: '#5ba58c', tagClass: 'is-string' }
+  }
+
   if (param.paramType === 'STRING_ARRAY' || param.paramType === 'NUMBER_ARRAY') {
-    return { colour: '#8a5ba5', tagClass: 'is-array' }
+    return { colour: '#8457e8', tagClass: 'is-loop' }
   }
 
   return { colour: '#5ba58c', tagClass: 'is-string' }
@@ -54,20 +58,6 @@ const sortedParams = computed(() =>
 )
 
 const groups = computed<ToolboxGroup[]>(() => [
-  {
-    key: 'structure',
-    title: '模板结构',
-    items: [
-      {
-        key: 'message_content',
-        label: '消息内容',
-        tag: '结构',
-        colour: '#5364c7',
-        tagClass: 'is-structure',
-        state: { type: 'message_content' },
-      },
-    ],
-  },
   {
     key: 'params',
     title: '场景参数',
@@ -84,7 +74,6 @@ const groups = computed<ToolboxGroup[]>(() => [
           type: 'scene_param_value',
           fields: {
             PARAM_LABEL: param.paramLabel || param.paramName,
-            PARAM_NAME: '',
           },
           extraState: {
             sceneId: props.toolboxData.sceneId,
@@ -103,22 +92,19 @@ const groups = computed<ToolboxGroup[]>(() => [
     items: [
       {
         key: 'text',
-        label: '常量',
-        tag: '请输入文本',
+        label: '字符串常量',
+        tag: '输入文本',
         colour: '#3f7bf3',
         tagClass: 'is-text',
-        state: {
-          type: 'text',
-          fields: { TEXT: '' },
-        },
+        state: { type: 'text', fields: { TEXT: '' } },
       },
       {
         key: 'text_join',
-        label: '拼接',
-        tag: '请输入文本',
+        label: '字符串拼接',
+        tag: '多段拼接',
         colour: '#3f7bf3',
         tagClass: 'is-text',
-        state: { type: 'text_join' },
+        state: { type: 'text_join', fields: { TEXT: '' } },
       },
     ],
   },
@@ -128,27 +114,32 @@ const groups = computed<ToolboxGroup[]>(() => [
     items: [
       {
         key: 'controls_if',
-        label: '条件',
-        tag: 'if / else',
+        label: 'if / else 条件分支',
+        tag: '条件',
         colour: '#f59e0b',
         tagClass: 'is-logic',
         state: { type: 'controls_if' },
       },
       {
         key: 'logic_operation_and',
-        label: '逻辑',
-        tag: 'AND',
+        label: 'AND 逻辑且',
+        tag: '且',
         colour: '#f59e0b',
         tagClass: 'is-logic',
-        state: {
-          type: 'logic_operation',
-          fields: { OP: 'AND' },
-        },
+        state: { type: 'logic_operation', extraState: { operation: 'AND' } },
+      },
+      {
+        key: 'logic_operation_or',
+        label: 'OR 逻辑或',
+        tag: '或',
+        colour: '#f59e0b',
+        tagClass: 'is-logic',
+        state: { type: 'logic_operation', extraState: { operation: 'OR' } },
       },
       {
         key: 'logic_negate',
-        label: '逻辑',
-        tag: 'NOT',
+        label: 'NOT 逻辑非',
+        tag: '取反',
         colour: '#f59e0b',
         tagClass: 'is-logic',
         state: { type: 'logic_negate' },
@@ -161,51 +152,48 @@ const groups = computed<ToolboxGroup[]>(() => [
     items: [
       {
         key: 'logic_compare_gt',
-        label: '比较',
-        tag: '大于 >',
+        label: '大于 >',
+        tag: '比较',
         colour: '#1098b5',
         tagClass: 'is-compare',
-        state: { type: 'logic_compare', fields: { OP: 'GT' } },
+        state: { type: 'logic_compare', extraState: { operation: 'GT' } },
       },
       {
         key: 'logic_compare_lt',
-        label: '比较',
-        tag: '小于 <',
+        label: '小于 <',
+        tag: '比较',
         colour: '#1098b5',
         tagClass: 'is-compare',
-        state: { type: 'logic_compare', fields: { OP: 'LT' } },
+        state: { type: 'logic_compare', extraState: { operation: 'LT' } },
       },
       {
         key: 'logic_compare_eq',
-        label: '比较',
-        tag: '等于 =',
+        label: '等于 =',
+        tag: '比较',
         colour: '#1098b5',
         tagClass: 'is-compare',
-        state: {
-          type: 'logic_compare',
-          fields: { OP: 'EQ' },
-        },
+        state: { type: 'logic_compare', extraState: { operation: 'EQ' } },
       },
       {
         key: 'logic_compare_neq',
-        label: '比较',
-        tag: '不等于 !=',
+        label: '不等于 !=',
+        tag: '比较',
         colour: '#1098b5',
         tagClass: 'is-compare',
-        state: { type: 'logic_compare', fields: { OP: 'NEQ' } },
+        state: { type: 'logic_compare', extraState: { operation: 'NEQ' } },
       },
       {
         key: 'string_contains',
-        label: '比较',
-        tag: '包含 in',
+        label: '包含 (in)',
+        tag: '字符串',
         colour: '#1098b5',
         tagClass: 'is-compare',
         state: { type: 'string_contains' },
       },
       {
         key: 'string_like',
-        label: '比较',
-        tag: '匹配 like',
+        label: '匹配 (like)',
+        tag: '模式',
         colour: '#1098b5',
         tagClass: 'is-compare',
         state: { type: 'string_like' },
@@ -218,21 +206,13 @@ const groups = computed<ToolboxGroup[]>(() => [
     items: [
       {
         key: 'controls_forEach',
-        label: '循环',
-        tag: 'for-each',
+        label: 'for-each 遍历数组',
+        tag: '循环',
         colour: '#8457e8',
         tagClass: 'is-loop',
         state: {
           type: 'controls_forEach',
-          fields: { SEPARATOR: '' },
-          inputs: {
-            BODY: {
-              block: {
-                type: 'loop_item_value',
-                extraState: { itemType: 'STRING' },
-              },
-            },
-          },
+          extraState: { operation: 'FOR_EACH' },
         },
       },
     ],
@@ -242,44 +222,41 @@ const groups = computed<ToolboxGroup[]>(() => [
     title: '数学运算',
     items: [
       {
-        key: 'math_arithmetic_add',
-        label: '数学',
-        tag: '加法 +',
+        key: 'math_add',
+        label: '加法 +',
+        tag: '运算',
         colour: '#2fc46b',
         tagClass: 'is-math',
-        state: {
-          type: 'math_arithmetic',
-          fields: { OP: 'ADD' },
-        },
+        state: { type: 'math_arithmetic', extraState: { operation: 'ADD' } },
       },
       {
-        key: 'math_arithmetic_minus',
-        label: '数学',
-        tag: '减法 −',
+        key: 'math_minus',
+        label: '减法 -',
+        tag: '运算',
         colour: '#2fc46b',
         tagClass: 'is-math',
-        state: { type: 'math_arithmetic', fields: { OP: 'MINUS' } },
+        state: { type: 'math_arithmetic', extraState: { operation: 'MINUS' } },
       },
       {
-        key: 'math_arithmetic_multiply',
-        label: '数学',
-        tag: '乘法 ×',
+        key: 'math_multiply',
+        label: '乘法 ×',
+        tag: '运算',
         colour: '#2fc46b',
         tagClass: 'is-math',
-        state: { type: 'math_arithmetic', fields: { OP: 'MULTIPLY' } },
+        state: { type: 'math_arithmetic', extraState: { operation: 'MULTIPLY' } },
       },
       {
-        key: 'math_arithmetic_divide',
-        label: '数学',
-        tag: '除法 ÷',
+        key: 'math_divide',
+        label: '除法 ÷',
+        tag: '运算',
         colour: '#2fc46b',
         tagClass: 'is-math',
-        state: { type: 'math_arithmetic', fields: { OP: 'DIVIDE' } },
+        state: { type: 'math_arithmetic', extraState: { operation: 'DIVIDE' } },
       },
       {
         key: 'math_modulo',
-        label: '数学',
-        tag: '取余 %',
+        label: '取余 %',
+        tag: '运算',
         colour: '#2fc46b',
         tagClass: 'is-math',
         state: { type: 'math_modulo' },
@@ -292,30 +269,26 @@ const groups = computed<ToolboxGroup[]>(() => [
     items: [
       {
         key: 'amount_format',
-        label: '金额',
-        tag: '小数位：2',
+        label: '金额格式化',
+        tag: '¥12.50元',
         colour: '#e8a110',
         tagClass: 'is-format',
-        state: { type: 'amount_format' },
+        state: { type: 'amount_format', fields: { DECIMALS: '2' } },
       },
       {
         key: 'time_format',
-        label: '时间',
-        tag: 'yyyy-MM-dd',
+        label: '时间格式化',
+        tag: 'yyyy-MM-dd HH:mm:ss',
         colour: '#e8a110',
         tagClass: 'is-format',
-        state: {
-          type: 'time_format',
-          fields: { FORMAT: 'yyyy-MM-dd' },
-        },
+        state: { type: 'time_format', fields: { FORMAT: 'yyyy-MM-dd HH:mm:ss' } },
       },
     ],
   },
-])
+] as ToolboxGroup[])
 
 const handleDragStart = (event: DragEvent, state: TemplateToolboxBlockState) => {
   event.dataTransfer?.setData('application/x-template-blockly-block', JSON.stringify(state))
-
   if (event.dataTransfer) {
     event.dataTransfer.effectAllowed = 'copy'
   }
@@ -331,7 +304,7 @@ const handleDragStart = (event: DragEvent, state: TemplateToolboxBlockState) => 
     >
       <header class="template-blockly-toolbox__title">
         <span>{{ group.title }}</span>
-        <span>▾</span>
+        <span class="template-blockly-toolbox__chevron">⌄</span>
       </header>
 
       <div v-if="group.items.length" class="template-blockly-toolbox__items">
@@ -350,10 +323,7 @@ const handleDragStart = (event: DragEvent, state: TemplateToolboxBlockState) => 
             :style="{ backgroundColor: item.colour }"
           />
           <span class="template-blockly-toolbox__label">{{ item.label }}</span>
-          <span
-            class="template-blockly-toolbox__tag"
-            :class="item.tagClass"
-          >
+          <span class="template-blockly-toolbox__tag" :class="item.tagClass">
             {{ item.tag }}
           </span>
         </button>
@@ -366,9 +336,8 @@ const handleDragStart = (event: DragEvent, state: TemplateToolboxBlockState) => 
 <style scoped lang="scss">
 .template-blockly-toolbox {
   box-sizing: border-box;
-  width: 250px;
-  min-width: 250px;
-  max-width: 250px;
+  width: 220px;
+  min-width: 220px;
   padding: 8px 10px 12px;
   overflow-x: hidden;
   overflow-y: auto;
@@ -399,33 +368,34 @@ const handleDragStart = (event: DragEvent, state: TemplateToolboxBlockState) => 
   display: flex;
   align-items: center;
   justify-content: space-between;
-  height: 28px;
-  padding: 0 4px;
+  height: 24px;
   color: #8799b5;
-  font-size: 13px;
-  font-weight: 500;
+  font-size: 12px;
+  font-weight: 600;
 }
 
-.template-blockly-toolbox__title span:last-child {
-  font-size: 9px;
+.template-blockly-toolbox__chevron {
+  color: #9aabc2;
+  font-size: 12px;
 }
 
 .template-blockly-toolbox__items {
   display: grid;
-  gap: 7px;
+  gap: 6px;
 }
 
 .template-blockly-toolbox__item {
   display: flex;
   align-items: center;
-  gap: 9px;
+  gap: 8px;
+  box-sizing: border-box;
   width: 100%;
-  min-height: 42px;
+  min-height: 36px;
   padding: 0 9px;
   border: 1px solid #dfe7f0;
   border-radius: 8px;
   background: #ffffff;
-  color: #344054;
+  color: #24324a;
   cursor: grab;
   transition:
     border-color 0.16s ease,
@@ -435,9 +405,9 @@ const handleDragStart = (event: DragEvent, state: TemplateToolboxBlockState) => 
 
 .template-blockly-toolbox__item:hover,
 .template-blockly-toolbox__item:focus-visible {
-  border-color: #9eb8ed;
+  border-color: #3f7bf3;
   outline: none;
-  box-shadow: 0 0 0 1px rgb(64 116 255 / 12%);
+  box-shadow: 0 0 0 1px rgb(63 123 243 / 14%);
 }
 
 .template-blockly-toolbox__item:active {
@@ -445,25 +415,19 @@ const handleDragStart = (event: DragEvent, state: TemplateToolboxBlockState) => 
 }
 
 .template-blockly-toolbox__colour {
-  width: 8px;
-  height: 24px;
-  border-radius: 5px;
   flex: none;
-  opacity: 0.85;
+  width: 8px;
+  height: 8px;
+  border-radius: 3px;
 }
 
 .template-blockly-toolbox__label {
-  flex: none;
   min-width: 0;
-  max-width: 76px;
+  flex: 1;
   overflow: hidden;
-  padding: 3px 7px;
-  border-radius: 6px;
-  background: #f6f8fb;
-  color: #23314a;
   font-size: 12px;
-  font-weight: 700;
-  line-height: 18px;
+  font-weight: 500;
+  line-height: 16px;
   text-align: left;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -471,15 +435,15 @@ const handleDragStart = (event: DragEvent, state: TemplateToolboxBlockState) => 
 
 .template-blockly-toolbox__tag {
   flex: none;
-  max-width: 110px;
+  max-width: 76px;
   overflow: hidden;
-  padding: 3px 6px;
+  padding: 2px 5px;
   border-radius: 4px;
   background: #f1f5f9;
   color: #7d91ad;
-  font-size: 11px;
-  font-weight: 600;
-  line-height: 14px;
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 13px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -494,29 +458,15 @@ const handleDragStart = (event: DragEvent, state: TemplateToolboxBlockState) => 
   color: #5b7aa5;
 }
 
-.template-blockly-toolbox__tag.is-array {
-  background: #f6f0fa;
-  color: #8a5ba5;
-}
-
 .template-blockly-toolbox__tag.is-text {
   background: #eef4ff;
   color: #3f7bf3;
 }
 
-.template-blockly-toolbox__tag.is-format {
-  background: #fff8e8;
-  color: #e8a110;
-}
-
-.template-blockly-toolbox__tag.is-structure {
-  background: #f0f1fb;
-  color: #5364c7;
-}
-
+.template-blockly-toolbox__tag.is-format,
 .template-blockly-toolbox__tag.is-logic {
   background: #fff6e5;
-  color: #e49108;
+  color: #f59e0b;
 }
 
 .template-blockly-toolbox__tag.is-compare {
@@ -524,9 +474,9 @@ const handleDragStart = (event: DragEvent, state: TemplateToolboxBlockState) => 
   color: #1098b5;
 }
 
-.template-blockly-toolbox__tag.is-string-judge {
-  background: #eaf8f6;
-  color: #248f88;
+.template-blockly-toolbox__tag.is-loop {
+  background: #f3effe;
+  color: #8457e8;
 }
 
 .template-blockly-toolbox__tag.is-math {
@@ -534,23 +484,10 @@ const handleDragStart = (event: DragEvent, state: TemplateToolboxBlockState) => 
   color: #2fc46b;
 }
 
-.template-blockly-toolbox__tag.is-loop {
-  background: #f3effe;
-  color: #8457e8;
-}
-
 .template-blockly-toolbox__empty {
-  padding: 12px 8px;
+  padding: 10px 8px;
   color: #a3adbd;
-  font-size: 12px;
+  font-size: 11px;
   text-align: center;
-}
-
-@media (max-width: 1180px) {
-  .template-blockly-toolbox {
-    width: 240px;
-    min-width: 240px;
-    max-width: 240px;
-  }
 }
 </style>

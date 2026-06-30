@@ -2,6 +2,18 @@ import * as Blockly from 'blockly'
 
 const SVG_NS = 'http://www.w3.org/2000/svg'
 
+export interface TemplateNodeLink {
+  sourceId: string
+  targetId: string
+}
+
+type PortSide = 'left' | 'right'
+
+interface TemplateNodePort {
+  block: Blockly.BlockSvg
+  side: PortSide
+}
+
 const createSvgElement = <K extends keyof SVGElementTagNameMap>(
   name: K,
   className: string,
@@ -11,49 +23,72 @@ const createSvgElement = <K extends keyof SVGElementTagNameMap>(
   return element
 }
 
-const getConnectionPoint = (connection: Blockly.RenderedConnection) => {
-  const block = connection.getSourceBlock()
-  const blockPosition = block.getRelativeToSurfaceXY()
+const getBlockSize = (block: Blockly.BlockSvg) => {
   const size = block.getHeightWidth()
-
-  if (connection.type === Blockly.ConnectionType.PREVIOUS_STATEMENT) {
+  if (block.type === 'text') {
     return {
-      x: blockPosition.x,
-      y: blockPosition.y + size.height / 2,
+      width: Math.max(250, size.width + 12),
+      height: Math.max(46, size.height + 4),
+      radius: 14,
     }
   }
 
-  if (connection.type === Blockly.ConnectionType.NEXT_STATEMENT) {
-    return {
-      x: blockPosition.x + size.width,
-      y: blockPosition.y + size.height / 2,
-    }
-  }
-
-  const offset = connection.getOffsetInBlock()
   return {
-    x: blockPosition.x + offset.x,
-    y: blockPosition.y + offset.y,
+    width: Math.max(112, size.width + 8),
+    height: Math.max(34, size.height + 4),
+    radius: 9,
   }
 }
 
-const getConnectionColour = (connection: Blockly.RenderedConnection) =>
-  connection.getSourceBlock().getColour() || '#64748b'
+const getBlockPoint = (block: Blockly.BlockSvg, side: PortSide) => {
+  const position = block.getRelativeToSurfaceXY()
+  const size = getBlockSize(block)
+  return {
+    x: side === 'left' ? position.x : position.x + size.width,
+    y: position.y + size.height / 2,
+  }
+}
+
+const normalizeLink = (first: TemplateNodePort, second: TemplateNodePort) => {
+  if (first.block.id === second.block.id || first.side === second.side) {
+    return null
+  }
+
+  const source = first.side === 'right' ? first : second
+  const target = first.side === 'left' ? first : second
+  return {
+    sourceId: source.block.id,
+    targetId: target.block.id,
+  }
+}
+
+const isSameLink = (current: TemplateNodeLink, next: TemplateNodeLink) =>
+  current.sourceId === next.sourceId && current.targetId === next.targetId
 
 export class TemplateConnectionOverlay {
   private readonly workspace: Blockly.WorkspaceSvg
   private readonly lineLayer: SVGGElement
   private readonly portLayer: SVGGElement
+  private readonly handleChange: () => void
   private animationFrame = 0
-  private pendingBlock: Blockly.BlockSvg | null = null
+  private pendingPort: TemplateNodePort | null = null
+  private links: TemplateNodeLink[] = []
 
-  constructor(workspace: Blockly.WorkspaceSvg) {
+  constructor(workspace: Blockly.WorkspaceSvg, handleChange: () => void) {
     this.workspace = workspace
+    this.handleChange = handleChange
     const canvas = workspace.getCanvas()
     this.lineLayer = createSvgElement('g', 'template-connection-lines')
     this.portLayer = createSvgElement('g', 'template-connection-ports')
     canvas.insertBefore(this.lineLayer, canvas.firstChild)
     canvas.appendChild(this.portLayer)
+  }
+
+  getLinks = () => [...this.links]
+
+  setLinks = (links: TemplateNodeLink[]) => {
+    this.links = this.normalizeLinks(links)
+    this.scheduleRender()
   }
 
   scheduleRender = () => {
@@ -65,115 +100,156 @@ export class TemplateConnectionOverlay {
     this.lineLayer.replaceChildren()
     this.portLayer.replaceChildren()
 
-    const blocks = this.workspace.getAllBlocks(false)
+    const blocks = this.workspace.getAllBlocks(false) as Blockly.BlockSvg[]
+    const blockById = new Map(blocks.map((block) => [block.id, block]))
+
+    this.links = this.links.filter(
+      (link) => blockById.has(link.sourceId) && blockById.has(link.targetId),
+    )
+
     blocks.forEach((block) => {
-      const root = block.getSvgRoot()
-      const colour = block.getColour() || '#64748b'
-      root.style.setProperty('--template-block-border', colour)
-
-      let card = root.querySelector<SVGRectElement>(':scope > .template-block-card')
-      if (!card) {
-        card = createSvgElement('rect', 'template-block-card')
-        root.insertBefore(card, root.firstChild)
-      }
-
-      const size = block.getHeightWidth()
-      card.setAttribute('x', '0')
-      card.setAttribute('y', '0')
-      card.setAttribute('width', String(Math.max(110, size.width)))
-      card.setAttribute('height', String(Math.max(34, size.height)))
-      card.setAttribute('rx', '9')
-      card.setAttribute('ry', '9')
+      this.renderBlockCard(block)
+      this.renderPort(block, 'left')
+      this.renderPort(block, 'right')
     })
 
-    const renderedConnections = blocks.flatMap((block) => block.getConnections_(true))
-
-    const renderedPairs = new Set<string>()
-
-    renderedConnections.forEach((connection) => {
-      const point = getConnectionPoint(connection)
-      const port = createSvgElement('circle', 'template-connection-port')
-      port.setAttribute('cx', String(point.x))
-      port.setAttribute('cy', String(point.y))
-      port.setAttribute('r', '4')
-      port.style.setProperty('--connection-colour', getConnectionColour(connection))
-      if (
-        connection.type === Blockly.ConnectionType.PREVIOUS_STATEMENT ||
-        connection.type === Blockly.ConnectionType.NEXT_STATEMENT
-      ) {
-        port.classList.add('is-statement')
-        port.addEventListener('pointerdown', (event) => {
-          event.preventDefault()
-          event.stopPropagation()
-        })
-        port.addEventListener('click', (event) => {
-          event.preventDefault()
-          event.stopPropagation()
-          this.handleConnectionClick(connection)
-        })
-      }
-
-      if (connection.isConnected()) {
-        port.classList.add('is-connected')
-      }
-      if (connection.getSourceBlock() === this.pendingBlock) {
-        port.classList.add('is-pending')
-      }
-
-      this.portLayer.appendChild(port)
-
-      const target = connection.targetConnection
-      if (!target) {
+    this.links.forEach((link) => {
+      const sourceBlock = blockById.get(link.sourceId)
+      const targetBlock = blockById.get(link.targetId)
+      if (!sourceBlock || !targetBlock) {
         return
       }
 
-      const pairKey = [connection.getSourceBlock().id, target.getSourceBlock().id]
-        .sort()
-        .join(':')
-      if (renderedPairs.has(pairKey)) {
-        return
-      }
-      renderedPairs.add(pairKey)
-
-      const targetPoint = getConnectionPoint(target)
-      const controlOffset = Math.max(24, Math.abs(targetPoint.x - point.x) * 0.45)
-      const direction = targetPoint.x >= point.x ? 1 : -1
+      const sourcePoint = getBlockPoint(sourceBlock, 'right')
+      const targetPoint = getBlockPoint(targetBlock, 'left')
+      const controlOffset = Math.max(28, Math.abs(targetPoint.x - sourcePoint.x) * 0.42)
+      const direction = targetPoint.x >= sourcePoint.x ? 1 : -1
       const path = createSvgElement('path', 'template-connection-line')
       path.setAttribute(
         'd',
-        `M ${point.x} ${point.y} C ${point.x + controlOffset * direction} ${point.y}, ${targetPoint.x - controlOffset * direction} ${targetPoint.y}, ${targetPoint.x} ${targetPoint.y}`,
+        `M ${sourcePoint.x} ${sourcePoint.y} C ${sourcePoint.x + controlOffset * direction} ${sourcePoint.y}, ${targetPoint.x - controlOffset * direction} ${targetPoint.y}, ${targetPoint.x} ${targetPoint.y}`,
       )
       this.lineLayer.appendChild(path)
     })
   }
 
-  private handleConnectionClick(connection: Blockly.RenderedConnection) {
-    const clickedBlock = connection.getSourceBlock()
+  private renderBlockCard(block: Blockly.BlockSvg) {
+    const root = block.getSvgRoot()
+    const colour = block.getColour() || '#64748b'
+    const size = getBlockSize(block)
+    root.style.setProperty('--template-block-border', colour)
 
-    if (!this.pendingBlock) {
-      this.pendingBlock = clickedBlock
+    let card = root.querySelector<SVGRectElement>(':scope > .template-block-card')
+    if (!card) {
+      card = createSvgElement('rect', 'template-block-card')
+      root.insertBefore(card, root.firstChild)
+    }
+
+    card.setAttribute('x', '0')
+    card.setAttribute('y', '0')
+    card.setAttribute('width', String(size.width))
+    card.setAttribute('height', String(size.height))
+    card.setAttribute('rx', String(size.radius))
+    card.setAttribute('ry', String(size.radius))
+
+    let labelPill = root.querySelector<SVGRectElement>(':scope > .template-block-label-pill')
+    if (block.type === 'text') {
+      if (!labelPill) {
+        labelPill = createSvgElement('rect', 'template-block-label-pill')
+        root.insertBefore(labelPill, card.nextSibling)
+      }
+      labelPill.setAttribute('x', '13')
+      labelPill.setAttribute('y', '10')
+      labelPill.setAttribute('width', '62')
+      labelPill.setAttribute('height', '26')
+      labelPill.setAttribute('rx', '9')
+      labelPill.setAttribute('ry', '9')
+    } else {
+      labelPill?.remove()
+    }
+  }
+
+  private renderPort(block: Blockly.BlockSvg, side: PortSide) {
+    const point = getBlockPoint(block, side)
+    const port = createSvgElement('circle', 'template-connection-port')
+    port.setAttribute('cx', String(point.x))
+    port.setAttribute('cy', String(point.y))
+    port.setAttribute('r', block.type === 'text' ? '5' : '4')
+    port.style.setProperty('--connection-colour', block.getColour() || '#64748b')
+    port.classList.add(`is-${side}`)
+
+    if (block.type === 'text') {
+      port.classList.add('is-text')
+    }
+    if (this.links.some((link) => link.sourceId === block.id || link.targetId === block.id)) {
+      port.classList.add('is-connected')
+    }
+    if (this.pendingPort?.block.id === block.id && this.pendingPort.side === side) {
+      port.classList.add('is-pending')
+    }
+
+    port.addEventListener('pointerdown', (event) => {
+      event.preventDefault()
+      event.stopPropagation()
+    })
+    port.addEventListener('click', (event) => {
+      event.preventDefault()
+      event.stopPropagation()
+      this.handlePortClick({ block, side })
+    })
+
+    this.portLayer.appendChild(port)
+  }
+
+  private handlePortClick(port: TemplateNodePort) {
+    if (!this.pendingPort) {
+      this.pendingPort = port
       this.scheduleRender()
       return
     }
 
-    const sourceBlock = this.pendingBlock
-    this.pendingBlock = null
+    const link = normalizeLink(this.pendingPort, port)
+    this.pendingPort = null
 
-    if (sourceBlock === clickedBlock) {
+    if (!link) {
       this.scheduleRender()
       return
     }
 
-    const source = sourceBlock.nextConnection
-    const target = clickedBlock.previousConnection
-
-    if (source && target && source.getConnectionChecker().canConnect(source, target, false)) {
-      source.targetConnection?.disconnect()
-      target.targetConnection?.disconnect()
-      source.connect(target)
+    const existingIndex = this.links.findIndex((current) => isSameLink(current, link))
+    if (existingIndex >= 0) {
+      this.links.splice(existingIndex, 1)
+    } else {
+      this.links = [
+        ...this.links.filter(
+          (current) => current.sourceId !== link.sourceId && current.targetId !== link.targetId,
+        ),
+        link,
+      ]
     }
 
+    this.handleChange()
     this.scheduleRender()
+  }
+
+  private normalizeLinks(links: TemplateNodeLink[]) {
+    const blockIds = new Set(this.workspace.getAllBlocks(false).map((block) => block.id))
+    const normalizedLinks: TemplateNodeLink[] = []
+
+    links.forEach((link) => {
+      if (
+        !blockIds.has(link.sourceId) ||
+        !blockIds.has(link.targetId) ||
+        link.sourceId === link.targetId ||
+        normalizedLinks.some((current) => isSameLink(current, link))
+      ) {
+        return
+      }
+
+      normalizedLinks.push(link)
+    })
+
+    return normalizedLinks
   }
 
   dispose() {

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import * as Blockly from 'blockly'
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
 import {
   Aim,
@@ -9,6 +9,7 @@ import {
   Document,
   RefreshLeft,
   RefreshRight,
+  VideoPlay,
   ZoomIn,
   ZoomOut,
 } from '@element-plus/icons-vue'
@@ -16,19 +17,20 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   getTemplateDetail,
   getTemplateToolbox,
+  previewTemplate,
   saveTemplateContent,
 } from '../../api/template'
 import { getChannelTypeLabel } from '../../types/channel'
 import type {
   TemplateContentSaveForm,
   TemplateDetail,
+  TemplatePreviewResult,
+  TemplatePreviewValue,
   TemplateReferenceDetail,
   TemplateToolboxData,
-  BlocklyWorkspaceState,
 } from '../../types/template'
 import TemplateBlocklyToolbox from './components/TemplateBlocklyToolbox.vue'
 import type { TemplateToolboxBlockState } from './components/TemplateBlocklyToolbox.vue'
-import TemplatePreviewDialog from './components/TemplatePreviewDialog.vue'
 import TemplateReferenceDialog from './components/TemplateReferenceDialog.vue'
 import {
   registerTemplateBlocks,
@@ -37,6 +39,11 @@ import {
 } from './blockly/blockDefinitions'
 import {
   BLOCKLY_SCHEMA_VERSION,
+  TEMPLATE_ENTRY_BLOCK_ID_KEY,
+  TEMPLATE_LINKED_NODE_MODE,
+  TEMPLATE_LINKS_KEY,
+  TEMPLATE_NODE_MODE_KEY,
+  TEMPLATE_NODE_ORDER_KEY,
   clearTemplateWorkspaceUndo,
   createTemplateWorkspace,
   disposeTemplateWorkspace,
@@ -45,7 +52,15 @@ import {
   resizeTemplateWorkspace,
   saveTemplateWorkspace,
 } from './blockly/workspace'
-import { TemplateConnectionOverlay } from './blockly/connectionOverlay'
+import {
+  TemplateConnectionOverlay,
+  type TemplateNodeLink,
+} from './blockly/connectionOverlay'
+
+interface WorkspaceHistoryState {
+  undoStack_?: unknown[]
+  redoStack_?: unknown[]
+}
 
 const route = useRoute()
 const router = useRouter()
@@ -53,37 +68,39 @@ const workspaceContainer = ref<HTMLElement>()
 const templateDetail = ref<TemplateDetail | null>(null)
 const toolboxData = ref<TemplateToolboxData | null>(null)
 const loading = ref(false)
-const ready = ref(false)
 const loadFailed = ref(false)
 const loadError = ref('')
+const ready = ref(false)
 const saving = ref(false)
 const dirty = ref(false)
 const saveErrors = ref<string[]>([])
-const referenceDialogVisible = ref(false)
-const previewDialogVisible = ref(false)
-const previewWorkspace = ref<BlocklyWorkspaceState>({})
-const workspaceScale = ref(100)
 const hasWorkspaceBlocks = ref(false)
 const canUndo = ref(false)
 const canRedo = ref(false)
+const workspaceScale = ref(100)
+const referenceDialogVisible = ref(false)
+const previewPanelVisible = ref(false)
+const previewExpanded = ref(false)
+const previewing = ref(false)
+const previewResult = ref<TemplatePreviewResult | null>(null)
+const previewValues = reactive<Record<string, string>>({})
+
 let workspace: Blockly.WorkspaceSvg | null = null
 let connectionOverlay: TemplateConnectionOverlay | null = null
+let resizeObserver: ResizeObserver | null = null
 let restoringWorkspace = false
 let leaveConfirmPromise: Promise<boolean> | null = null
 let originalBodyOverflow = ''
-let editorDisposed = false
-let loadSequence = 0
+let disposed = false
 let skipNextLeaveConfirm = false
-let resizeObserver: ResizeObserver | null = null
 
 const templateId = computed(() => {
   const value = route.params.templateId
   return Array.isArray(value) ? value[0] || '' : value || ''
 })
 
-const saveStateText = computed(() => (dirty.value ? '未保存' : '已保存'))
-const statusText = computed(() => (templateDetail.value?.status === 1 ? '启用' : '停用'))
 const toolboxParams = computed(() => toolboxData.value?.params ?? [])
+const saveStateText = computed(() => (dirty.value ? '未保存' : '已保存'))
 const channelTypeText = computed(() =>
   getChannelTypeLabel(
     templateDetail.value?.channelType || '',
@@ -96,9 +113,26 @@ const sceneText = computed(
 const canZoomOut = computed(() => workspaceScale.value > 50)
 const canZoomIn = computed(() => workspaceScale.value < 200)
 
-interface WorkspaceHistoryState {
-  undoStack_?: unknown[]
-  redoStack_?: unknown[]
+const readErrorMessage = (error: unknown, fallback: string) => {
+  if (error instanceof Error && error.message) {
+    return error.message
+  }
+  if (typeof error === 'string' && error.trim()) {
+    return error
+  }
+  return fallback
+}
+
+const isEditableTarget = (target: EventTarget | null) => {
+  if (!(target instanceof HTMLElement)) {
+    return false
+  }
+
+  return Boolean(
+    target.closest(
+      'input, textarea, select, [contenteditable="true"], .el-input, .el-input-number, .blocklyHtmlInput, .blocklyWidgetDiv, .blocklyDropDownDiv',
+    ),
+  )
 }
 
 const updateToolbarState = () => {
@@ -113,35 +147,20 @@ const updateToolbarState = () => {
   canRedo.value = (historyWorkspace.redoStack_?.length ?? 0) > 0
 }
 
-const readErrorMessage = (error: unknown, fallback: string) => {
-  if (error instanceof Error && error.message) {
-    return error.message
-  }
-
-  if (typeof error === 'string' && error.trim()) {
-    return error
-  }
-
-  return fallback
-}
-
-const isEditableTarget = (target: EventTarget | null) => {
-  if (!(target instanceof HTMLElement)) {
-    return false
-  }
-
-  return Boolean(
-    target.closest(
-      'input, textarea, select, [contenteditable="true"], .el-input, .el-input-number, .el-date-editor, .blocklyHtmlInput, .blocklyWidgetDiv, .blocklyDropDownDiv',
-    ),
-  )
-}
-
-const resizeWorkspace = () => {
+const refreshWorkspaceState = () => {
   if (!workspace) {
+    hasWorkspaceBlocks.value = false
+    updateToolbarState()
     return
   }
 
+  workspaceScale.value = Math.round(workspace.getScale() * 100)
+  hasWorkspaceBlocks.value = workspace.getAllBlocks(false).length > 0
+  updateToolbarState()
+  connectionOverlay?.scheduleRender()
+}
+
+const resizeWorkspace = () => {
   resizeTemplateWorkspace(workspace)
   connectionOverlay?.scheduleRender()
 }
@@ -149,25 +168,110 @@ const resizeWorkspace = () => {
 const attachResizeObserver = () => {
   resizeObserver?.disconnect()
   resizeObserver = null
-
   if (!workspaceContainer.value || typeof ResizeObserver === 'undefined') {
     return
   }
 
-  resizeObserver = new ResizeObserver(() => {
-    resizeWorkspace()
-  })
+  resizeObserver = new ResizeObserver(() => resizeWorkspace())
   resizeObserver.observe(workspaceContainer.value)
-
-  if (workspaceContainer.value.parentElement) {
-    resizeObserver.observe(workspaceContainer.value.parentElement)
-  }
 }
 
-const waitForInitialWorkspaceEvents = () =>
-  new Promise<void>((resolve) => {
-    window.setTimeout(resolve, 120)
+const resetPreviewValues = (toolbox: TemplateToolboxData) => {
+  Object.keys(previewValues).forEach((key) => {
+    delete previewValues[key]
   })
+
+  toolbox.params.forEach((param) => {
+    previewValues[param.paramName] = ''
+  })
+  previewResult.value = null
+}
+
+const getPreviewValue = (paramName: string, paramType: string): TemplatePreviewValue => {
+  const value = previewValues[paramName] ?? ''
+  if (paramType === 'NUMBER') {
+    const numericValue = Number(value)
+    return Number.isFinite(numericValue) ? numericValue : 0
+  }
+  return value
+}
+
+const getPreviewPlaceholder = (paramType: string) => {
+  if (paramType === 'NUMBER') {
+    return '如：12.50'
+  }
+
+  if (paramType === 'TIME') {
+    return '如：2026-06-06 11:11:11'
+  }
+
+  return '如：食堂一楼'
+}
+
+const isTemplateNodeLink = (value: unknown): value is TemplateNodeLink => {
+  if (typeof value !== 'object' || value === null) {
+    return false
+  }
+
+  const link = value as Partial<TemplateNodeLink>
+  return typeof link.sourceId === 'string' && typeof link.targetId === 'string'
+}
+
+const readTemplateLinks = (state: unknown): TemplateNodeLink[] => {
+  if (typeof state !== 'object' || state === null) {
+    return []
+  }
+
+  const value = (state as Record<string, unknown>)[TEMPLATE_LINKS_KEY]
+  return Array.isArray(value) ? value.filter(isTemplateNodeLink) : []
+}
+
+const buildLinkedNodeOrder = (links: TemplateNodeLink[]) => {
+  if (!workspace) {
+    return []
+  }
+
+  const blockIds = new Set(workspace.getAllBlocks(false).map((block) => block.id))
+  const sourceIds = new Set(links.map((link) => link.sourceId))
+  const targetIds = new Set(links.map((link) => link.targetId))
+  const entryBlockId =
+    [...sourceIds].find((sourceId) => !targetIds.has(sourceId) && blockIds.has(sourceId)) ??
+    workspace.getTopBlocks(false).find((block) => blockIds.has(block.id))?.id ??
+    ''
+
+  if (!entryBlockId) {
+    return []
+  }
+
+  const order: string[] = []
+  const visited = new Set<string>()
+  let currentId = entryBlockId
+
+  while (currentId && !visited.has(currentId) && blockIds.has(currentId)) {
+    order.push(currentId)
+    visited.add(currentId)
+    currentId = links.find((link) => link.sourceId === currentId)?.targetId ?? ''
+  }
+
+  return order
+}
+
+const saveWorkspaceWithLinks = () => {
+  if (!workspace) {
+    return {}
+  }
+
+  const links = connectionOverlay?.getLinks() ?? []
+  const nodeOrder = buildLinkedNodeOrder(links)
+
+  return {
+    ...saveTemplateWorkspace(workspace),
+    [TEMPLATE_NODE_MODE_KEY]: TEMPLATE_LINKED_NODE_MODE,
+    [TEMPLATE_LINKS_KEY]: links,
+    [TEMPLATE_ENTRY_BLOCK_ID_KEY]: nodeOrder[0] ?? '',
+    [TEMPLATE_NODE_ORDER_KEY]: nodeOrder,
+  }
+}
 
 const disposeCurrentWorkspace = () => {
   resizeObserver?.disconnect()
@@ -182,57 +286,26 @@ const disposeCurrentWorkspace = () => {
   canRedo.value = false
 }
 
-const refreshWorkspaceState = () => {
-  if (!workspace) {
-    hasWorkspaceBlocks.value = false
-    updateToolbarState()
-    return
-  }
-
-  workspaceScale.value = Math.round(workspace.getScale() * 100)
-  hasWorkspaceBlocks.value = workspace.getAllBlocks(false).length > 0
-  updateToolbarState()
-}
-
 const handleWorkspaceChange = (event: Blockly.Events.Abstract) => {
-  if (!workspace || editorDisposed) {
+  if (!workspace || disposed) {
     return
   }
 
   refreshWorkspaceState()
-  connectionOverlay?.scheduleRender()
 
   if (!ready.value || restoringWorkspace || event.isUiEvent) {
     return
   }
 
   if (
-    event.type !== Blockly.Events.BLOCK_CREATE &&
-    event.type !== Blockly.Events.BLOCK_DELETE &&
-    event.type !== Blockly.Events.BLOCK_MOVE &&
-    event.type !== Blockly.Events.BLOCK_CHANGE
+    event.type === Blockly.Events.BLOCK_CREATE ||
+    event.type === Blockly.Events.BLOCK_DELETE ||
+    event.type === Blockly.Events.BLOCK_MOVE ||
+    event.type === Blockly.Events.BLOCK_CHANGE
   ) {
-    return
+    dirty.value = true
+    saveErrors.value = []
   }
-
-  // 忽略 controls_if 积木在 mutator 重组过程中产生的输入结构变化事件
-  // （由 _templateMutatorRecomposing 标记）。真正的分支结构变化
-  // 由 recomposeSourceBlock 在组外派发的 mutation 事件承担，仍会标记 dirty。
-  if (event.type === Blockly.Events.BLOCK_CHANGE) {
-    const changeEvent = event as Blockly.Events.BlockChange
-    if (changeEvent.blockId) {
-      const target = workspace?.getBlockById(changeEvent.blockId)
-      if (
-        target &&
-        (target as { _templateMutatorRecomposing?: boolean })._templateMutatorRecomposing
-      ) {
-        return
-      }
-    }
-  }
-
-  dirty.value = true
-  saveErrors.value = []
 }
 
 const initializeWorkspace = async () => {
@@ -241,59 +314,57 @@ const initializeWorkspace = async () => {
   }
 
   registerTemplateBlocks()
-  workspace = createTemplateWorkspace(
-    workspaceContainer.value,
-    handleWorkspaceChange,
-  )
-  connectionOverlay = new TemplateConnectionOverlay(workspace)
+  workspace = createTemplateWorkspace(workspaceContainer.value, handleWorkspaceChange)
+  connectionOverlay = new TemplateConnectionOverlay(workspace, () => {
+    if (!ready.value || restoringWorkspace) {
+      return
+    }
+
+    dirty.value = true
+    saveErrors.value = []
+  })
 
   const document = parseBlocklyDocument(templateDetail.value?.blocklyJson)
-
   if (document) {
     restoringWorkspace = true
     try {
       loadTemplateWorkspace(workspace, document.workspace)
+      connectionOverlay.setLinks(readTemplateLinks(document.workspace))
       syncSceneParamBlockLabels(workspace, toolboxData.value)
       validateSceneParamBlocks(workspace, toolboxData.value)
     } finally {
       restoringWorkspace = false
     }
+  } else {
+    connectionOverlay.setLinks([])
   }
 
   refreshWorkspaceState()
   resizeWorkspace()
   attachResizeObserver()
-  connectionOverlay.scheduleRender()
 }
 
 const loadEditor = async () => {
-  const currentLoadSequence = ++loadSequence
-
   if (!templateId.value) {
-    ready.value = false
     loadFailed.value = true
     loadError.value = '缺少模板 ID，无法加载编辑器。'
     return
   }
 
   loading.value = true
-  ready.value = false
   loadFailed.value = false
   loadError.value = ''
+  ready.value = false
   saveErrors.value = []
   disposeCurrentWorkspace()
 
   try {
-    const id = templateId.value
-    const detail = await getTemplateDetail(id)
+    const [detail, toolbox] = await Promise.all([
+      getTemplateDetail(templateId.value),
+      getTemplateToolbox(templateId.value),
+    ])
 
-    if (editorDisposed || currentLoadSequence !== loadSequence) {
-      return
-    }
-
-    const toolbox = await getTemplateToolbox(id)
-
-    if (editorDisposed || currentLoadSequence !== loadSequence) {
+    if (disposed) {
       return
     }
 
@@ -302,18 +373,10 @@ const loadEditor = async () => {
       ...toolbox,
       params: toolbox.params ?? [],
     }
+    resetPreviewValues(toolboxData.value)
     await nextTick()
-
-    if (editorDisposed || currentLoadSequence !== loadSequence) {
-      return
-    }
-
     await initializeWorkspace()
-    await waitForInitialWorkspaceEvents()
-
-    if (editorDisposed || currentLoadSequence !== loadSequence) {
-      return
-    }
+    await new Promise((resolve) => window.setTimeout(resolve, 80))
 
     if (workspace) {
       clearTemplateWorkspaceUndo(workspace)
@@ -322,27 +385,17 @@ const loadEditor = async () => {
     ready.value = true
     dirty.value = false
   } catch (error) {
-    if (editorDisposed || currentLoadSequence !== loadSequence) {
-      return
-    }
-
     templateDetail.value = null
     toolboxData.value = null
     loadFailed.value = true
-    ready.value = false
-    loadError.value = readErrorMessage(
-      error,
-      '模板编辑器加载失败，请检查服务后重新加载。',
-    )
+    loadError.value = readErrorMessage(error, '模板编辑器加载失败，请检查服务后重新加载。')
   } finally {
-    if (currentLoadSequence === loadSequence) {
-      loading.value = false
-    }
+    loading.value = false
   }
 }
 
 const saveContent = async () => {
-  if (!ready.value || !workspace || saving.value || !templateId.value) {
+  if (!workspace || !ready.value || saving.value || !templateId.value) {
     return
   }
 
@@ -352,7 +405,7 @@ const saveContent = async () => {
   try {
     const form: TemplateContentSaveForm = {
       schemaVersion: BLOCKLY_SCHEMA_VERSION,
-      workspace: saveTemplateWorkspace(workspace),
+      workspace: saveWorkspaceWithLinks(),
     }
     const result = await saveTemplateContent(templateId.value, form)
 
@@ -362,26 +415,6 @@ const saveContent = async () => {
         result.errors?.filter((error) => Boolean(error.trim())) ?? ['模板内容校验未通过']
       ElMessage.error('模板内容校验未通过')
       return
-    }
-
-    if (editorDisposed || !workspace) {
-      return
-    }
-
-    const normalizedDocument = parseBlocklyDocument(result.blocklyJson)
-
-    if (normalizedDocument) {
-      restoringWorkspace = true
-      try {
-        loadTemplateWorkspace(workspace, normalizedDocument.workspace)
-        if (toolboxData.value) {
-          syncSceneParamBlockLabels(workspace, toolboxData.value)
-          validateSceneParamBlocks(workspace, toolboxData.value)
-        }
-        refreshWorkspaceState()
-      } finally {
-        restoringWorkspace = false
-      }
     }
 
     if (templateDetail.value) {
@@ -399,6 +432,186 @@ const saveContent = async () => {
     ElMessage.error(message)
   } finally {
     saving.value = false
+  }
+}
+
+const runPreview = async () => {
+  if (!workspace || !ready.value || !templateId.value || !toolboxData.value) {
+    return
+  }
+
+  previewing.value = true
+  try {
+    const values = Object.fromEntries(
+      toolboxData.value.params.map((param) => [
+        param.paramName,
+        getPreviewValue(param.paramName, param.paramType),
+      ]),
+    )
+
+    previewResult.value = await previewTemplate({
+      templateId: templateId.value,
+      schemaVersion: BLOCKLY_SCHEMA_VERSION,
+      workspace: saveWorkspaceWithLinks(),
+      values,
+    })
+  } catch {
+    // 请求拦截器已统一弹出错误提示，避免同一错误重复弹窗。
+  } finally {
+    previewing.value = false
+  }
+}
+
+const openPreviewPanel = async () => {
+  previewPanelVisible.value = true
+  previewExpanded.value = true
+  await nextTick()
+  resizeWorkspace()
+}
+
+const collapsePreviewPanel = async () => {
+  previewExpanded.value = false
+  previewPanelVisible.value = false
+  await nextTick()
+  resizeWorkspace()
+}
+
+const isToolboxBlockState = (value: unknown): value is TemplateToolboxBlockState =>
+  typeof value === 'object' &&
+  value !== null &&
+  'type' in value &&
+  typeof value.type === 'string'
+
+const createToolboxBlock = (
+  state: TemplateToolboxBlockState,
+  clientX?: number,
+  clientY?: number,
+) => {
+  if (!workspace || !workspaceContainer.value) {
+    return
+  }
+
+  const containerRect = workspaceContainer.value.getBoundingClientRect()
+  const screenCoordinate = new Blockly.utils.Coordinate(
+    clientX ?? containerRect.left + Math.min(360, containerRect.width / 2),
+    clientY ?? containerRect.top + Math.min(180, containerRect.height / 2),
+  )
+  const workspaceCoordinate = Blockly.utils.svgMath.screenToWsCoordinates(
+    workspace,
+    screenCoordinate,
+  )
+
+  Blockly.serialization.blocks.append(
+    {
+      ...state,
+      x: workspaceCoordinate.x,
+      y: workspaceCoordinate.y,
+    },
+    workspace,
+    { recordUndo: true },
+  )
+  refreshWorkspaceState()
+}
+
+const handleWorkspaceDrop = (event: DragEvent) => {
+  event.preventDefault()
+  const serializedState = event.dataTransfer?.getData('application/x-template-blockly-block')
+  if (!serializedState) {
+    return
+  }
+
+  try {
+    const state: unknown = JSON.parse(serializedState)
+    if (isToolboxBlockState(state)) {
+      createToolboxBlock(state, event.clientX, event.clientY)
+    }
+  } catch {
+    ElMessage.error('积木创建失败')
+  }
+}
+
+const undoWorkspace = () => {
+  workspace?.undo(false)
+  refreshWorkspaceState()
+}
+
+const redoWorkspace = () => {
+  workspace?.undo(true)
+  refreshWorkspaceState()
+}
+
+const zoomWorkspace = (direction: 1 | -1) => {
+  if ((direction < 0 && !canZoomOut.value) || (direction > 0 && !canZoomIn.value)) {
+    return
+  }
+
+  workspace?.zoomCenter(direction)
+  refreshWorkspaceState()
+}
+
+const centerWorkspace = () => {
+  workspace?.setScale(1)
+  workspace?.scrollCenter()
+  refreshWorkspaceState()
+}
+
+const clearWorkspace = async () => {
+  if (!workspace || !hasWorkspaceBlocks.value) {
+    return
+  }
+
+  try {
+    await ElMessageBox.confirm('确认清空当前画布中的全部积木吗？', '清空画布', {
+      type: 'warning',
+      confirmButtonText: '确认清空',
+      cancelButtonText: '取消',
+    })
+  } catch {
+    return
+  }
+
+  workspace.clear()
+  connectionOverlay?.setLinks([])
+  dirty.value = true
+  previewResult.value = null
+  refreshWorkspaceState()
+}
+
+const loadReference = async (detail: TemplateReferenceDetail) => {
+  if (!workspace || !toolboxData.value) {
+    return
+  }
+
+  const document = parseBlocklyDocument(detail.blocklyJson)
+  if (!document) {
+    ElMessage.warning('参考模板暂无可用内容')
+    return
+  }
+
+  if (hasWorkspaceBlocks.value) {
+    try {
+      await ElMessageBox.confirm('加载参考模板将覆盖当前画布内容，是否继续？', '覆盖当前画布', {
+        type: 'warning',
+        confirmButtonText: '确认覆盖',
+        cancelButtonText: '取消',
+      })
+    } catch {
+      return
+    }
+  }
+
+  restoringWorkspace = true
+  try {
+    loadTemplateWorkspace(workspace, document.workspace)
+    connectionOverlay?.setLinks(readTemplateLinks(document.workspace))
+    syncSceneParamBlockLabels(workspace, toolboxData.value)
+    validateSceneParamBlocks(workspace, toolboxData.value)
+    dirty.value = true
+    saveErrors.value = []
+    referenceDialogVisible.value = false
+    refreshWorkspaceState()
+  } finally {
+    restoringWorkspace = false
   }
 }
 
@@ -429,226 +642,15 @@ const confirmDiscardChanges = () => {
   return leaveConfirmPromise
 }
 
-const loadReference = async (detail: TemplateReferenceDetail) => {
-  if (!workspace) {
-    return
-  }
-
-  const document = parseBlocklyDocument(detail.blocklyJson)
-
-  if (!document) {
-    ElMessage.warning('参考模板暂无可用内容')
-    return
-  }
-
-  if (hasWorkspaceBlocks.value) {
-    try {
-      await ElMessageBox.confirm(
-        '加载参考模板将覆盖当前画布内容，是否继续？',
-        '覆盖当前画布',
-        {
-          type: 'warning',
-          confirmButtonText: '确认覆盖',
-          cancelButtonText: '取消',
-        },
-      )
-    } catch {
-      return
-    }
-  }
-
-  const currentState = saveTemplateWorkspace(workspace)
-
-  try {
-    restoringWorkspace = true
-    loadTemplateWorkspace(workspace, document.workspace)
-    if (toolboxData.value) {
-      syncSceneParamBlockLabels(workspace, toolboxData.value)
-      validateSceneParamBlocks(workspace, toolboxData.value)
-    }
-    dirty.value = true
-    refreshWorkspaceState()
-    saveErrors.value = []
-    referenceDialogVisible.value = false
-    ElMessage.success('参考模板已加载到当前画布，请保存后生效')
-  } catch {
-    loadTemplateWorkspace(workspace, currentState)
-    if (toolboxData.value) {
-      syncSceneParamBlockLabels(workspace, toolboxData.value)
-      validateSceneParamBlocks(workspace, toolboxData.value)
-    }
-    refreshWorkspaceState()
-    ElMessage.error('参考模板加载失败，当前画布已保留')
-  } finally {
-    restoringWorkspace = false
-  }
-}
-
-const openPreview = () => {
-  if (!ready.value || !workspace) {
-    return
-  }
-
-  previewWorkspace.value = saveTemplateWorkspace(workspace)
-  previewDialogVisible.value = true
-}
-
-watch(previewDialogVisible, async () => {
-  await nextTick()
-  resizeWorkspace()
-})
-
-const undoWorkspace = () => {
-  workspace?.undo(false)
-  refreshWorkspaceState()
-}
-
-const redoWorkspace = () => {
-  workspace?.undo(true)
-  refreshWorkspaceState()
-}
-
-const zoomWorkspace = (direction: 1 | -1) => {
-  if ((direction < 0 && !canZoomOut.value) || (direction > 0 && !canZoomIn.value)) {
-    return
-  }
-
-  workspace?.zoomCenter(direction)
-
-  if (workspace) {
-    workspaceScale.value = Math.round(workspace.getScale() * 100)
-    connectionOverlay?.scheduleRender()
-  }
-}
-
-const centerWorkspace = () => {
-  workspace?.setScale(1)
-  workspace?.scrollCenter()
-
-  if (workspace) {
-    workspaceScale.value = Math.round(workspace.getScale() * 100)
-    connectionOverlay?.scheduleRender()
-  }
-}
-
-const clearWorkspace = async () => {
-  if (!workspace || !hasWorkspaceBlocks.value) {
-    return
-  }
-
-  try {
-    await ElMessageBox.confirm(
-      '确认清空当前画布中的全部积木吗？该操作可以通过撤销恢复。',
-      '清空画布',
-      {
-        type: 'warning',
-        confirmButtonText: '确认清空',
-        cancelButtonText: '取消',
-      },
-    )
-  } catch {
-    return
-  }
-
-  Blockly.Events.setGroup(true)
-  try {
-    workspace.getTopBlocks(false).forEach((block) => {
-      block.dispose(true, true)
-    })
-  } finally {
-    Blockly.Events.setGroup(false)
-  }
-
-  dirty.value = true
-  saveErrors.value = []
-  refreshWorkspaceState()
-  connectionOverlay?.scheduleRender()
-}
-
-const isToolboxBlockState = (value: unknown): value is TemplateToolboxBlockState => {
-  return (
-    typeof value === 'object' &&
-    value !== null &&
-    'type' in value &&
-    typeof value.type === 'string'
-  )
-}
-
-const createToolboxBlock = (
-  state: TemplateToolboxBlockState,
-  clientX?: number,
-  clientY?: number,
-) => {
-  if (!workspace || !workspaceContainer.value) {
-    return
-  }
-
-  const containerRect = workspaceContainer.value.getBoundingClientRect()
-  const screenCoordinate = new Blockly.utils.Coordinate(
-    clientX ?? containerRect.left + containerRect.width / 2,
-    clientY ?? containerRect.top + containerRect.height / 2,
-  )
-  const workspaceCoordinate = Blockly.utils.svgMath.screenToWsCoordinates(
-    workspace,
-    screenCoordinate,
-  )
-
-  Blockly.serialization.blocks.append(
-    {
-      ...state,
-      x: workspaceCoordinate.x,
-      y: workspaceCoordinate.y,
-    },
-    workspace,
-    { recordUndo: true },
-  )
-  refreshWorkspaceState()
-}
-
-const handleWorkspaceDrop = (event: DragEvent) => {
-  event.preventDefault()
-  const serializedState = event.dataTransfer?.getData(
-    'application/x-template-blockly-block',
-  )
-
-  if (!serializedState) {
-    return
-  }
-
-  try {
-    const state: unknown = JSON.parse(serializedState)
-
-    if (isToolboxBlockState(state)) {
-      createToolboxBlock(state, event.clientX, event.clientY)
-    }
-  } catch {
-    ElMessage.error('积木创建失败')
-  }
-}
-
 const returnToList = () => {
   confirmDiscardChanges().then((confirmed) => {
-    if (!confirmed) {
-      return
+    if (confirmed) {
+      skipNextLeaveConfirm = true
+      router.push('/template').catch(() => {
+        skipNextLeaveConfirm = false
+      })
     }
-
-    skipNextLeaveConfirm = true
-    router.push('/template').catch(() => {
-      skipNextLeaveConfirm = false
-    })
   })
-}
-
-const handleResize = () => {
-  resizeWorkspace()
-}
-const handleBeforeUnload = (event: BeforeUnloadEvent) => {
-  if (loadFailed.value || !dirty.value) {
-    return
-  }
-
-  event.preventDefault()
-  event.returnValue = ''
 }
 
 const handleShortcut = (event: KeyboardEvent) => {
@@ -667,10 +669,6 @@ const handleShortcut = (event: KeyboardEvent) => {
 
   if (hasModifier && key === 'z') {
     event.preventDefault()
-    if (event.shiftKey) {
-      redoWorkspace()
-      return
-    }
     undoWorkspace()
     return
   }
@@ -678,22 +676,10 @@ const handleShortcut = (event: KeyboardEvent) => {
   if (hasModifier && key === 'y') {
     event.preventDefault()
     redoWorkspace()
-    return
-  }
-
-  if (key === 'escape') {
-    if (previewDialogVisible.value) {
-      previewDialogVisible.value = false
-      return
-    }
-
-    if (referenceDialogVisible.value) {
-      referenceDialogVisible.value = false
-    }
   }
 }
 
-onBeforeRouteLeave(async () => {
+onBeforeRouteLeave(() => {
   if (skipNextLeaveConfirm) {
     skipNextLeaveConfirm = false
     return true
@@ -703,27 +689,25 @@ onBeforeRouteLeave(async () => {
 })
 
 onMounted(() => {
-  editorDisposed = false
+  disposed = false
   originalBodyOverflow = document.body.style.overflow
   document.body.style.overflow = 'hidden'
-  window.addEventListener('resize', handleResize)
-  window.addEventListener('beforeunload', handleBeforeUnload)
+  window.addEventListener('resize', resizeWorkspace)
   window.addEventListener('keydown', handleShortcut)
   loadEditor()
 })
 
 onBeforeUnmount(() => {
-  editorDisposed = true
-  loadSequence += 1
-  referenceDialogVisible.value = false
-  previewDialogVisible.value = false
+  disposed = true
   document.body.style.overflow = originalBodyOverflow
-  window.removeEventListener('resize', handleResize)
-  window.removeEventListener('beforeunload', handleBeforeUnload)
+  window.removeEventListener('resize', resizeWorkspace)
   window.removeEventListener('keydown', handleShortcut)
-  resizeObserver?.disconnect()
-  resizeObserver = null
   disposeCurrentWorkspace()
+})
+
+watch(previewExpanded, async () => {
+  await nextTick()
+  resizeWorkspace()
 })
 </script>
 
@@ -732,12 +716,7 @@ onBeforeUnmount(() => {
     <div class="template-editor-page__container">
       <header class="template-editor-page__header">
         <div class="template-editor-page__identity">
-          <el-button
-            class="template-editor-page__back"
-            link
-            :icon="ArrowLeft"
-            @click="returnToList"
-          >
+          <el-button link :icon="ArrowLeft" class="template-editor-page__back" @click="returnToList">
             返回列表
           </el-button>
           <strong>{{ templateDetail?.templateName || '模板内容编辑' }}</strong>
@@ -749,33 +728,20 @@ onBeforeUnmount(() => {
           >
             {{ templateDetail?.hasContent ? '已编辑' : '未编辑' }}
           </span>
-          <span
-            class="template-editor-page__status-tag is-outline"
-            :class="templateDetail?.status === 1 ? 'is-enabled' : 'is-disabled'"
-          >
-            {{ statusText }}
-          </span>
         </div>
+
         <div class="template-editor-page__actions">
-          <span
-            class="template-editor-page__save-state"
-            :class="{ 'is-dirty': dirty }"
-          >
+          <span class="template-editor-page__save-state" :class="{ 'is-dirty': dirty }">
             {{ saveStateText }}
           </span>
           <span class="template-editor-page__shortcut">Ctrl+S 保存</span>
-          <el-button
-            class="template-editor-page__preview"
-            :disabled="loading || loadFailed || !ready || !workspace"
-            @click="openPreview"
-          >
+          <el-button :disabled="loading || loadFailed || !ready" @click="openPreviewPanel">
             预览
           </el-button>
           <el-button
-            class="template-editor-page__save"
             type="primary"
             :loading="saving"
-            :disabled="loading || loadFailed || !ready || !workspace || !dirty"
+            :disabled="loading || loadFailed || !ready || !dirty"
             @click="saveContent"
           >
             保存
@@ -810,100 +776,92 @@ onBeforeUnmount(() => {
         </ul>
       </el-alert>
 
-      <div v-loading="loading" class="template-editor-page__editor">
+      <main v-loading="loading" class="template-editor-page__body">
         <div class="template-editor-page__toolbar">
           <div class="template-editor-page__tool-group">
-            <el-button
-              :icon="RefreshLeft"
-              title="撤销"
-              :disabled="loading || loadFailed || !ready || !workspace || !canUndo"
-              @click="undoWorkspace"
-            />
-            <el-button
-              :icon="RefreshRight"
-              title="重做"
-              :disabled="loading || loadFailed || !ready || !workspace || !canRedo"
-              @click="redoWorkspace"
-            />
+            <el-button :icon="RefreshLeft" title="撤销" :disabled="!ready || !canUndo" @click="undoWorkspace" />
+            <el-button :icon="RefreshRight" title="重做" :disabled="!ready || !canRedo" @click="redoWorkspace" />
           </div>
           <div class="template-editor-page__divider" />
           <div class="template-editor-page__tool-group">
-            <el-button
-              :icon="ZoomOut"
-              title="缩小"
-              :disabled="loading || loadFailed || !ready || !workspace || !canZoomOut"
-              @click="zoomWorkspace(-1)"
-            />
+            <el-button :icon="ZoomOut" title="缩小" :disabled="!ready || !canZoomOut" @click="zoomWorkspace(-1)" />
             <span class="template-editor-page__scale">{{ workspaceScale }}%</span>
-            <el-button
-              :icon="ZoomIn"
-              title="放大"
-              :disabled="loading || loadFailed || !ready || !workspace || !canZoomIn"
-              @click="zoomWorkspace(1)"
-            />
-            <el-button
-              :icon="Aim"
-              title="居中"
-              :disabled="loading || loadFailed || !ready || !workspace"
-              @click="centerWorkspace"
-            />
+            <el-button :icon="ZoomIn" title="放大" :disabled="!ready || !canZoomIn" @click="zoomWorkspace(1)" />
+            <el-button :icon="Aim" title="居中" :disabled="!ready" @click="centerWorkspace" />
           </div>
           <div class="template-editor-page__divider" />
-          <el-button
-            class="template-editor-page__delete"
-            :icon="Delete"
-            title="清空画布"
-            :disabled="loading || loadFailed || !ready || !workspace || !hasWorkspaceBlocks"
-            @click="clearWorkspace"
-          />
-          <el-button
-            class="template-editor-page__reference"
-            :icon="Document"
-            title="参考模板"
-            :disabled="loading || loadFailed || !ready || !workspace"
-            @click="referenceDialogVisible = true"
-          >
+          <el-button :icon="Delete" title="清空画布" :disabled="!ready || !hasWorkspaceBlocks" @click="clearWorkspace" />
+          <el-button :icon="Document" class="template-editor-page__reference" :disabled="!ready" @click="referenceDialogVisible = true">
             参考模板
           </el-button>
         </div>
 
-        <div v-if="!loadFailed && toolboxData" class="template-editor-page__workspace-wrap">
-          <TemplateBlocklyToolbox
-            :toolbox-data="toolboxData"
-            @add="createToolboxBlock"
-          />
-          <div
-            class="template-editor-page__canvas"
-            @dragover.prevent
-            @drop="handleWorkspaceDrop"
-          >
-            <div ref="workspaceContainer" class="template-editor-page__workspace" />
-            <div
-              v-if="!loading && !hasWorkspaceBlocks"
-              class="template-editor-page__empty-guide"
-            >
-              <strong>开始编排模板内容</strong>
-              <span>请从左侧工具箱拖入文本、场景参数或格式化积木</span>
-            </div>
-            <span class="template-editor-page__hint">
-              快捷键：Ctrl+Z 撤销 · Ctrl+Y 重做 · Ctrl+S 保存 · Ctrl+滚轮 缩放 · Delete 删除选中积木
-            </span>
+        <div v-if="!loadFailed && toolboxData" class="template-editor-page__workbench">
+          <div class="template-editor-page__workbench-content">
+            <TemplateBlocklyToolbox :toolbox-data="toolboxData" @add="createToolboxBlock" />
+
+            <section class="template-editor-page__main">
+              <div class="template-editor-page__canvas" @dragover.prevent @drop="handleWorkspaceDrop">
+                <div ref="workspaceContainer" class="template-editor-page__workspace" />
+                <div v-if="!loading && !hasWorkspaceBlocks" class="template-editor-page__empty-guide">
+                  <strong>开始编排模板内容</strong>
+                  <span>从左侧拖入积木后，在画布中移动、编辑并连接</span>
+                </div>
+                <span class="template-editor-page__hint">
+                  快捷键：Ctrl+Z 撤销 · Ctrl+Y 重做 · Ctrl+S 保存 · Delete 删除选中积木
+                </span>
+              </div>
+            </section>
           </div>
+
+          <section
+            v-if="previewPanelVisible"
+            class="template-editor-page__preview-panel"
+            :class="{ 'is-collapsed': !previewExpanded }"
+          >
+            <header class="template-editor-page__preview-header">
+              <strong>模板预览</strong>
+              <div>
+                <el-button size="small" @click="resetPreviewValues(toolboxData)">重置参数</el-button>
+                <el-button size="small" link @click="collapsePreviewPanel">
+                  收起 ▲
+                </el-button>
+              </div>
+            </header>
+
+            <div v-show="previewExpanded" class="template-editor-page__preview-body">
+              <div class="template-editor-page__param-grid">
+                <label v-for="param in toolboxParams" :key="param.paramName">
+                  <span>{{ param.paramLabel || param.paramName }} <em>{{ param.paramType }}</em></span>
+                  <el-input v-model="previewValues[param.paramName]" :placeholder="getPreviewPlaceholder(param.paramType)" />
+                </label>
+              </div>
+
+              <el-button
+                class="template-editor-page__execute-preview"
+                type="primary"
+                :icon="VideoPlay"
+                :loading="previewing"
+                :disabled="!ready"
+                @click="runPreview"
+              >
+                执行预览
+              </el-button>
+
+              <div class="template-editor-page__preview-result">
+                <span>渲染结果：</span>
+                <p>{{ previewResult?.renderedContent || '暂无预览结果' }}</p>
+              </div>
+            </div>
+          </section>
         </div>
-      </div>
+      </main>
     </div>
 
     <TemplateReferenceDialog
       v-model="referenceDialogVisible"
       :template-id="templateId"
       @load="loadReference"
-    />
-
-    <TemplatePreviewDialog
-      v-model="previewDialogVisible"
-      :template-id="templateId"
-      :params="toolboxParams"
-      :workspace="previewWorkspace"
     />
   </section>
 </template>
@@ -913,89 +871,81 @@ onBeforeUnmount(() => {
   position: fixed;
   z-index: 2000;
   inset: 0;
-  display: flex;
-  flex-direction: column;
   box-sizing: border-box;
-  width: 100vw;
-  height: 100vh;
-  min-height: 680px;
+  min-width: 1100px;
+  min-height: 700px;
   padding: 8px;
   overflow: hidden;
-  background: #f4f6fa;
+  background: #f3f6fa;
 }
 
 .template-editor-page__container {
   display: flex;
-  flex: 1;
-  flex-direction: column;
-  min-width: 0;
-  min-height: 0;
+  width: 100%;
+  height: 100%;
   overflow: hidden;
+  flex-direction: column;
   border: 1px solid #e3e8f0;
   border-radius: 16px;
   background: #ffffff;
-  box-shadow: 0 2px 10px rgb(31 45 61 / 4%);
 }
 
 .template-editor-page__header {
   display: flex;
+  height: 50px;
+  min-height: 50px;
   align-items: center;
   justify-content: space-between;
-  gap: 18px;
-  height: 58px;
-  min-height: 58px;
-  padding: 0 24px;
+  gap: 14px;
+  padding: 0 18px;
   border-bottom: 1px solid #e8edf4;
-  background: #ffffff;
+}
+
+.template-editor-page__identity,
+.template-editor-page__actions,
+.template-editor-page__tool-group {
+  display: flex;
+  align-items: center;
 }
 
 .template-editor-page__identity {
-  display: flex;
-  flex: 1;
-  align-items: center;
   min-width: 0;
-  gap: 12px;
+  flex: 1;
+  gap: 10px;
 
   strong {
-    max-width: min(360px, 30vw);
     overflow: hidden;
+    max-width: 360px;
     color: #172033;
-    font-size: 18px;
+    font-size: 15px;
     font-weight: 600;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
   > span:not(.template-editor-page__status-tag) {
-    flex: none;
     overflow: hidden;
-    max-width: 180px;
+    max-width: 160px;
     color: #8491a5;
-    font-size: 13px;
+    font-size: 12px;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 }
 
 .template-editor-page__back {
-  flex: none;
   padding: 0;
-  color: #8090a6;
-  font-size: 14px;
-
-  &:hover {
-    color: #3568d4;
-  }
+  color: #8798b0;
 }
 
 .template-editor-page__status-tag {
   display: inline-flex;
-  align-items: center;
   height: 24px;
-  padding: 0 10px;
+  align-items: center;
+  padding: 0 9px;
   border-radius: 12px;
-  font-size: 12px !important;
-  line-height: 24px;
+  font-size: 11px;
+  font-weight: 500;
 
   &.is-edited {
     background: #eaf8f0;
@@ -1006,43 +956,31 @@ onBeforeUnmount(() => {
     background: #fff5df;
     color: #b98522;
   }
-
-  &.is-outline {
-    box-sizing: border-box;
-    border: 1px solid;
-    background: #ffffff;
-  }
-
-  &.is-enabled {
-    border-color: #bfe8d0;
-    color: #19a05b;
-  }
-
-  &.is-disabled {
-    border-color: #d8dee8;
-    color: #6f7b8d;
-  }
 }
 
 .template-editor-page__actions {
-  display: flex;
-  flex: none;
-  align-items: center;
-  gap: 10px;
+  gap: 8px;
 
   :deep(.el-button) {
-    height: 36px;
+    height: 32px;
     margin-left: 0;
-    padding: 0 16px;
-    border-radius: 9px;
+    padding: 0 12px;
+    border-radius: 8px;
+    font-size: 12px;
+  }
+
+  :deep(.el-button--primary) {
+    min-width: 64px;
+    border: 0;
+    background: linear-gradient(135deg, #4169ef, #7448ef);
+    font-weight: 600;
   }
 }
 
 .template-editor-page__save-state {
   color: #16a05d;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
-  white-space: nowrap;
 
   &.is-dirty {
     color: #d8891c;
@@ -1051,133 +989,7 @@ onBeforeUnmount(() => {
 
 .template-editor-page__shortcut {
   color: #a3adbd;
-  font-size: 12px;
-  white-space: nowrap;
-}
-
-.template-editor-page__preview {
-  border: 1px solid #dce2eb;
-  background: #ffffff;
-  color: #344054;
-
-  &:hover {
-    border-color: #9eb2d8;
-    background: #f8faff;
-    color: #3568d4;
-  }
-}
-
-.template-editor-page__save {
-  min-width: 72px;
-  color: #ffffff;
-  border: none;
-  background: linear-gradient(135deg, #4169ef, #7547ef);
-  box-shadow: 0 4px 10px rgb(82 90 235 / 20%);
-  font-weight: 600;
-
-  &.is-disabled,
-  &:disabled {
-    border: none;
-    background: linear-gradient(135deg, #4169ef, #7547ef);
-    box-shadow: none;
-    color: #ffffff;
-    opacity: 0.45;
-  }
-}
-
-.template-editor-page__editor {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  min-width: 0;
-  min-height: 0;
-}
-
-.template-editor-page__toolbar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  height: 54px;
-  min-height: 54px;
-  padding: 0 20px;
-  border-bottom: 1px solid #e8edf4;
-  background: #ffffff;
-
-  :deep(.el-button) {
-    width: 36px;
-    height: 36px;
-    margin-left: 0;
-    padding: 0;
-    border: 1px solid #dce3ed;
-    border-radius: 8px;
-    background: #ffffff;
-    color: #62728a;
-    font-size: 16px;
-
-    &:hover {
-      border-color: #8ca7df;
-      background: #f6f9ff;
-      color: #3568d4;
-    }
-
-    &:disabled {
-      cursor: not-allowed;
-      opacity: 0.4;
-    }
-  }
-}
-
-.template-editor-page__tool-group {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.template-editor-page__divider {
-  width: 1px;
-  height: 24px;
-  margin: 0 4px;
-  background: #e5eaf1;
-}
-
-.template-editor-page__scale {
-  min-width: 48px;
-  color: #8a98ac;
-  font-size: 13px;
-  text-align: center;
-}
-
-.template-editor-page__reference {
-  width: auto !important;
-  padding: 0 12px !important;
-  gap: 6px;
-  font-size: 13px !important;
-}
-
-.template-editor-page__workspace-wrap {
-  position: relative;
-  display: flex;
-  flex: 1;
-  min-width: 0;
-  min-height: 0;
-  overflow: hidden;
-  background: #ffffff;
-}
-
-.template-editor-page__canvas {
-  position: relative;
-  flex: 1;
-  min-width: 0;
-  min-height: 0;
-  overflow: hidden;
-  background: #ffffff;
-}
-
-.template-editor-page__workspace {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
+  font-size: 11px;
 }
 
 .template-editor-page__load-error,
@@ -1190,26 +1002,114 @@ onBeforeUnmount(() => {
   }
 }
 
+.template-editor-page__body {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+}
+
+.template-editor-page__toolbar {
+  display: flex;
+  height: 46px;
+  min-height: 46px;
+  align-items: center;
+  gap: 7px;
+  padding: 0 16px;
+  border-bottom: 1px solid #e8edf4;
+
+  :deep(.el-button) {
+    width: 32px;
+    height: 32px;
+    margin-left: 0;
+    padding: 0;
+    border: 1px solid #dce3ed;
+    border-radius: 7px;
+    background: #ffffff;
+    color: #62728a;
+    font-size: 13px;
+  }
+}
+
+.template-editor-page__tool-group {
+  gap: 7px;
+}
+
+.template-editor-page__divider {
+  width: 1px;
+  height: 22px;
+  margin: 0 5px;
+  background: #e5eaf1;
+}
+
+.template-editor-page__scale {
+  min-width: 42px;
+  color: #8a98ac;
+  font-size: 12px;
+  text-align: center;
+}
+
+.template-editor-page__reference {
+  width: auto !important;
+  padding: 0 10px !important;
+}
+
+.template-editor-page__workbench {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
+  overflow: hidden;
+}
+
+.template-editor-page__workbench-content {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  overflow: hidden;
+}
+
+.template-editor-page__main {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  background: #ffffff;
+}
+
+.template-editor-page__canvas {
+  position: relative;
+  min-height: 0;
+  flex: 1;
+  overflow: hidden;
+}
+
+.template-editor-page__workspace {
+  position: absolute;
+  inset: 0;
+}
+
 .template-editor-page__empty-guide {
   position: absolute;
   top: 50%;
   left: 50%;
   z-index: 4;
   display: grid;
-  gap: 10px;
+  gap: 8px;
   color: #9aa7ba;
   text-align: center;
   transform: translate(-50%, -50%);
   pointer-events: none;
 
   strong {
-    color: #8795aa;
-    font-size: 16px;
-    font-weight: 600;
+    color: #7f8da4;
+    font-size: 14px;
   }
 
   span {
-    font-size: 13px;
+    font-size: 12px;
   }
 }
 
@@ -1219,11 +1119,119 @@ onBeforeUnmount(() => {
   left: 20px;
   z-index: 5;
   color: #b0bac8;
-  font-size: 11px;
+  font-size: 10px;
   pointer-events: none;
 }
 
+.template-editor-page__preview-panel {
+  flex: none;
+  min-height: 196px;
+  border-top: 1px solid #e8edf4;
+  background: #ffffff;
+  box-shadow: 0 -4px 14px rgb(31 45 61 / 5%);
+
+  &.is-collapsed {
+    min-height: 42px;
+  }
+}
+
+.template-editor-page__preview-header {
+  display: flex;
+  height: 42px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 18px;
+  border-bottom: 1px solid #edf1f6;
+
+  strong {
+    color: #172033;
+    font-size: 13px;
+  }
+
+  :deep(.el-button) {
+    height: 28px;
+    padding: 0 10px;
+    border-radius: 7px;
+    font-size: 12px;
+  }
+}
+
+.template-editor-page__preview-body {
+  padding: 14px 18px 16px;
+}
+
+.template-editor-page__param-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(128px, 1fr));
+  gap: 10px;
+  margin-bottom: 12px;
+
+  label {
+    display: grid;
+    gap: 6px;
+    color: #5f6f86;
+    font-size: 11px;
+  }
+
+  em {
+    color: #9cadc5;
+    font-style: normal;
+  }
+
+  :deep(.el-input__wrapper) {
+    min-height: 30px;
+    font-size: 12px;
+  }
+
+  :deep(.el-input__inner) {
+    font-size: 12px;
+  }
+}
+
+.template-editor-page__preview-result {
+  margin-top: 14px;
+  padding: 12px 14px;
+  border: 1px solid #bdebcf;
+  border-radius: 8px;
+  background: #effcf4;
+  color: #1f2d40;
+
+  span {
+    display: block;
+    margin-bottom: 8px;
+    color: #96a7ba;
+    font-size: 11px;
+  }
+
+  p {
+    margin: 0;
+    font-size: 13px;
+    line-height: 1.7;
+  }
+}
+
+.template-editor-page__execute-preview {
+  min-width: 96px;
+  border: 0 !important;
+  border-radius: 9px;
+  background: linear-gradient(135deg, #4169ef, #7448ef) !important;
+  box-shadow: 0 4px 10px rgb(82 90 235 / 20%);
+  font-size: 12px;
+  font-weight: 600;
+
+  &.is-disabled,
+  &:disabled {
+    background: linear-gradient(135deg, #4169ef, #7448ef) !important;
+    box-shadow: none;
+    opacity: 0.45;
+  }
+}
+
 .template-editor-page__workspace {
+  --template-move-cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Cpath d='M12 2.8l3.4 4.1h-2.1v3.8h3.8V8.6l4.1 3.4-4.1 3.4v-2.1h-3.8v3.8h2.1L12 21.2l-3.4-4.1h2.1v-3.8H6.9v2.1L2.8 12l4.1-3.4v2.1h3.8V6.9H8.6z' fill='%23ffffff' stroke='%234b5563' stroke-width='1.15' stroke-linejoin='round'/%3E%3C/svg%3E")
+      12 12,
+    all-scroll;
+
   :deep(.injectionDiv),
   :deep(.blocklySvg) {
     width: 100%;
@@ -1235,75 +1243,101 @@ onBeforeUnmount(() => {
     stroke: none;
   }
 
-  :deep(.blocklyBlockCanvas .blocklyDraggable) {
-    filter: drop-shadow(0 2px 4px rgb(40 55 85 / 7%));
-  }
-
-  :deep(.blocklySelected > .template-block-card) {
-    stroke: #3568d4;
-    stroke-width: 2px;
-    filter: drop-shadow(0 0 4px rgb(53 104 212 / 22%));
-  }
-
-  :deep(.blocklyScrollbarHandle) {
-    fill: #c6d0de;
-    opacity: 0.55;
-  }
-
   :deep(.blocklyTrash) {
     opacity: 1;
-    transform-box: fill-box;
-    transform-origin: center bottom;
-    transition:
-      opacity 0.12s ease,
-      transform 0.12s ease;
-  }
-
-  :deep(.blocklyTrash:hover),
-  :deep(.blocklyTrash:focus) {
-    opacity: 1;
+    cursor: default;
+    transition: filter 0.14s ease;
   }
 
   :deep(.blocklyTrash .blocklyFocusRing) {
-    width: 108px;
-    height: 78px;
-    x: -30px;
-    y: -20px;
-    rx: 54px;
-    ry: 54px;
-    fill: rgb(255 86 86 / 20%);
-    stroke: #e72f3c;
-    stroke-dasharray: 7 5;
-    stroke-linecap: round;
-    stroke-width: 3px;
-  }
-
-  :deep(.blocklyTrash image) {
-    opacity: 0.46;
-    filter: invert(32%) sepia(68%) saturate(1742%) hue-rotate(330deg) brightness(101%) contrast(91%);
-  }
-
-  :deep(.blocklyTrash .blocklyTrashLid) {
-    opacity: 0.46;
-  }
-
-  :deep(.blocklyTrash.blocklyDeleteStyle .blocklyFocusRing) {
-    fill: rgb(255 70 70 / 34%);
-    stroke: #dc1f2f;
+    width: 46px;
+    height: 46px;
+    x: 0;
+    y: -2px;
+    rx: 10px;
+    ry: 10px;
+    fill: rgb(255 242 242 / 96%);
+    stroke: #ffb8b8;
+    stroke-width: 1.6px;
     stroke-dasharray: none;
+    vector-effect: non-scaling-stroke;
+    transition:
+      fill 0.14s ease,
+      stroke 0.14s ease,
+      stroke-dasharray 0.14s ease,
+      stroke-width 0.14s ease;
   }
 
+  :deep(.template-trash-icon) {
+    pointer-events: none;
+  }
+
+  :deep(.template-trash-icon__hitbox) {
+    fill: transparent;
+    stroke: none;
+  }
+
+  :deep(.template-trash-icon__body) {
+    fill: #fff5f5;
+    stroke: #ff6b6b;
+    stroke-width: 1.8px;
+    vector-effect: non-scaling-stroke;
+  }
+
+  :deep(.template-trash-icon__stroke) {
+    fill: none;
+    stroke: #ff6b6b;
+    stroke-width: 1.8px;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    vector-effect: non-scaling-stroke;
+  }
+
+  :deep(.template-trash-icon__line) {
+    opacity: 0.78;
+  }
+
+  :deep(.template-trash-icon__body),
+  :deep(.template-trash-icon__stroke) {
+    transition:
+      fill 0.14s ease,
+      stroke 0.14s ease,
+      opacity 0.14s ease;
+  }
+
+  :deep(.blocklyTrash.blocklyTrashOpen),
   :deep(.blocklyTrash.blocklyDeleteStyle) {
-    transform: scale(1.04);
+    filter: drop-shadow(0 4px 10px rgb(255 96 96 / 20%));
   }
 
-  :deep(.blocklyTrash.blocklyDeleteStyle image) {
-    opacity: 0.9;
-    filter: invert(24%) sepia(100%) saturate(2542%) hue-rotate(340deg) brightness(91%) contrast(95%);
+  :deep(.blocklyTrash.blocklyTrashOpen .blocklyFocusRing),
+  :deep(.blocklyTrash.blocklyDeleteStyle .blocklyFocusRing) {
+    fill: rgb(255 232 232 / 98%);
+    stroke: #ff4d4f;
+    stroke-width: 2.2px;
   }
 
-  :deep(.blocklyTrash.blocklyDeleteStyle .blocklyTrashLid) {
-    opacity: 0.9;
+  :deep(.blocklyTrash.blocklyTrashOpen .template-trash-icon__body),
+  :deep(.blocklyTrash.blocklyDeleteStyle .template-trash-icon__body) {
+    fill: #ffecec;
+    stroke: #ff343b;
+  }
+
+  :deep(.blocklyTrash.blocklyTrashOpen .template-trash-icon__stroke),
+  :deep(.blocklyTrash.blocklyDeleteStyle .template-trash-icon__stroke) {
+    stroke: #ff343b;
+  }
+
+  :deep(.blocklyBlockCanvas .blocklyDraggable) {
+    cursor: var(--template-move-cursor) !important;
+    filter: drop-shadow(0 2px 4px rgb(40 55 85 / 7%));
+  }
+
+  :deep(.blocklyBlock),
+  :deep(.blocklyBlock *),
+  :deep(.template-block-card),
+  :deep(.blocklyFieldText) {
+    cursor: var(--template-move-cursor) !important;
   }
 
   :deep(.blocklyBlock > .blocklyPath),
@@ -1311,14 +1345,25 @@ onBeforeUnmount(() => {
   :deep(.blocklyBlock > .blocklyPathSelected) {
     fill: transparent !important;
     stroke: transparent !important;
+    stroke-width: 0;
     filter: none !important;
   }
 
   :deep(.template-block-card) {
     fill: #ffffff;
     stroke: var(--template-block-border, #64748b);
-    stroke-width: 1.25px;
+    stroke-width: 1.8px;
     vector-effect: non-scaling-stroke;
+    pointer-events: none;
+  }
+
+  :deep(.blocklySelected > .template-block-card) {
+    stroke: #3f7bf3;
+    stroke-width: 2.5px;
+  }
+
+  :deep(.template-block-label-pill) {
+    fill: #eef4ff;
     pointer-events: none;
   }
 
@@ -1332,24 +1377,36 @@ onBeforeUnmount(() => {
 
   :deep(.blocklyBlock .blocklyLabelField:first-child .blocklyFieldText) {
     fill: var(--template-block-colour, #64748b) !important;
-    font-weight: 700;
+    font-weight: 600;
   }
 
-  :deep(.text.blocklyBlock .blocklyLabelField .blocklyFieldText) {
-    fill: #3f7bf3;
-    font-size: 13px;
-    font-weight: 700;
+  :deep(.text.blocklyBlock) {
+    --template-block-colour: #3f7bf3;
   }
 
-  :deep(.blocklyTextInputField .blocklyFieldRect) {
+  :deep(.text.blocklyBlock > .template-block-card) {
+    stroke: #3f7bf3;
+    stroke-width: 2.5px;
+  }
+
+  :deep(.text.blocklyBlock .blocklyLabelField:first-child .blocklyFieldText) {
+    fill: #3f7bf3 !important;
+    font-weight: 600;
+  }
+
+  :deep(.template-text-field .blocklyFieldRect) {
     fill: transparent;
     stroke: none;
   }
 
-  :deep(.blocklyTextInputField .blocklyFieldText) {
+  :deep(.template-text-field .blocklyFieldText) {
     fill: #26324a !important;
     font-size: 13px;
     font-weight: 500;
+  }
+
+  :deep(.template-text-field--placeholder.is-empty .blocklyFieldText) {
+    fill: #8b95a5 !important;
   }
 
   :deep(.template-field-underline) {
@@ -1360,158 +1417,42 @@ onBeforeUnmount(() => {
   }
 
   :deep(.blocklyEditing .template-field-underline) {
-    stroke: #3568d4;
-    stroke-width: 2px;
+    stroke: #3f7bf3;
+    stroke-width: 1.6px;
   }
 
   :deep(.message_content.blocklyBlock),
   :deep(.text_join.blocklyBlock) {
     --template-block-colour: #3f7bf3;
-    --template-block-tint: #eef4ff;
   }
 
   :deep(.amount_format.blocklyBlock),
   :deep(.time_format.blocklyBlock) {
     --template-block-colour: #e8a110;
-    --template-block-tint: #fff8e8;
   }
 
   :deep(.logic_operation.blocklyBlock),
   :deep(.logic_negate.blocklyBlock),
   :deep(.controls_if.blocklyBlock) {
     --template-block-colour: #f59e0b;
-    --template-block-tint: #fff6e5;
   }
 
-  :deep(.logic_compare.blocklyBlock) {
-    --template-block-colour: #1098b5;
-    --template-block-tint: #eaf8fb;
-  }
-
+  :deep(.logic_compare.blocklyBlock),
   :deep(.string_contains.blocklyBlock),
   :deep(.string_like.blocklyBlock) {
-    --template-block-colour: #24a39a;
-    --template-block-tint: #eaf8f6;
+    --template-block-colour: #1098b5;
   }
 
   :deep(.math_arithmetic.blocklyBlock),
   :deep(.math_modulo.blocklyBlock) {
     --template-block-colour: #2fc46b;
-    --template-block-tint: #eafaf1;
   }
 
   :deep(.controls_forEach.blocklyBlock),
   :deep(.loop_item_value.blocklyBlock) {
     --template-block-colour: #8457e8;
-    --template-block-tint: #f3effe;
   }
 
-  :deep(
-    :is(
-        .message_content,
-        .text_join,
-        .amount_format,
-        .time_format,
-        .logic_operation,
-        .logic_negate,
-        .controls_if,
-        .logic_compare,
-        .string_contains,
-        .string_like,
-        .math_arithmetic,
-        .math_modulo,
-        .controls_forEach,
-        .loop_item_value
-      ).blocklyBlock
-      > .blocklyPath
-  ) {
-    fill: transparent !important;
-    stroke: transparent !important;
-  }
-
-  :deep(
-    :is(
-        .message_content,
-        .text_join,
-        .amount_format,
-        .time_format,
-        .logic_operation,
-        .logic_negate,
-        .controls_if,
-        .logic_compare,
-        .string_contains,
-        .string_like,
-        .math_arithmetic,
-        .math_modulo,
-        .controls_forEach,
-        .loop_item_value
-      ).blocklyBlock
-      > .blocklyOutlinePath
-  ) {
-    fill: transparent !important;
-    stroke: transparent !important;
-    stroke-width: 0;
-  }
-
-  :deep(.blocklyBlock > .blocklyPath),
-  :deep(.blocklyBlock > .blocklyOutlinePath),
-  :deep(.blocklyBlock > .blocklyPathSelected) {
-    fill: transparent !important;
-    stroke: transparent !important;
-    stroke-width: 0;
-    filter: none !important;
-  }
-
-  :deep(
-    :is(
-        .message_content,
-        .text_join,
-        .amount_format,
-        .time_format,
-        .logic_operation,
-        .logic_negate,
-        .controls_if,
-        .logic_compare,
-        .string_contains,
-        .string_like,
-        .math_arithmetic,
-        .math_modulo,
-        .controls_forEach,
-        .loop_item_value
-      ).blocklyBlock
-      :is(.blocklyLabelField, .blocklyDropdownField)
-      .blocklyFieldText
-  ) {
-    fill: #26324a !important;
-    font-weight: 700;
-    stroke: none !important;
-    paint-order: normal;
-  }
-
-  :deep(
-    :is(
-        .message_content,
-        .text_join,
-        .amount_format,
-        .time_format,
-        .logic_operation,
-        .logic_negate,
-        .controls_if,
-        .logic_compare,
-        .string_contains,
-        .string_like,
-        .math_arithmetic,
-        .math_modulo,
-        .controls_forEach,
-        .loop_item_value
-      ).blocklyBlock
-      .blocklyFieldRect
-  ) {
-    fill: #ffffff;
-    stroke: #d5ddea;
-  }
-
-  :deep(.template-connection-lines),
   :deep(.template-connection-lines) {
     pointer-events: none;
   }
@@ -1519,45 +1460,42 @@ onBeforeUnmount(() => {
   :deep(.template-connection-line) {
     fill: none;
     stroke: #a8b3c2;
-    stroke-width: 1.5px;
-    stroke-opacity: 0.72;
+    stroke-width: 1.6px;
+    stroke-opacity: 0.78;
     vector-effect: non-scaling-stroke;
   }
 
   :deep(.template-connection-port) {
     fill: #ffffff;
     stroke: var(--connection-colour, #64748b);
-    stroke-width: 1.5px;
+    stroke-width: 1.8px;
     vector-effect: non-scaling-stroke;
-    pointer-events: none;
-    transition: r 0.12s ease, fill 0.12s ease, stroke 0.12s ease;
-  }
-
-  :deep(.template-connection-port.is-statement) {
     cursor: crosshair;
     pointer-events: all;
+    transition:
+      fill 0.12s ease,
+      r 0.12s ease,
+      stroke 0.12s ease,
+      stroke-width 0.12s ease;
+  }
+
+  :deep(.template-connection-port.is-text) {
+    stroke: #94a3b8;
+    stroke-width: 2px;
+  }
+
+  :deep(.template-connection-port.is-connected) {
+    fill: #2f6df6;
+    stroke: #2f6df6;
   }
 
   :deep(.template-connection-port:hover),
   :deep(.template-connection-port.is-pending) {
     r: 7px;
-    fill: #3568d4;
-    stroke: #3568d4;
+    fill: #2f6df6;
+    stroke: #2f6df6;
+    stroke-width: 2.2px;
   }
-
-  :deep(.template-connection-port.is-connected) {
-    fill: #3568d4;
-    stroke: #3568d4;
-  }
-
-  :deep(.blocklyConnectionIndicator) {
-    stroke: #3568d4;
-  }
-
-  :deep(.blocklyDropdownText) {
-    fill: #26324a !important;
-  }
-
 }
 
 :global(.blocklyWidgetDiv) {
@@ -1566,8 +1504,8 @@ onBeforeUnmount(() => {
 
 :global(.blocklyWidgetDiv .blocklyHtmlInput) {
   box-sizing: border-box;
-  min-width: 60px;
-  max-width: 240px;
+  min-width: 80px;
+  max-width: 260px;
   color: #26324a !important;
   border: 0;
   border-bottom: 1px dashed #94a3b8;
@@ -1577,36 +1515,19 @@ onBeforeUnmount(() => {
   font: 500 13px/1.5 "Microsoft YaHei", "PingFang SC", sans-serif;
 }
 
-:global(.blocklyWidgetDiv .blocklyHtmlInput:focus) {
-  border-bottom-color: #3568d4;
-  box-shadow: 0 1px 0 #3568d4;
+:global(.blocklyBlockDragSurface),
+:global(.blocklyBlockDragSurface *),
+:global(.blocklyDragging),
+:global(.blocklyDragging *) {
+  cursor:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24'%3E%3Cpath d='M12 2.8l3.4 4.1h-2.1v3.8h3.8V8.6l4.1 3.4-4.1 3.4v-2.1h-3.8v3.8h2.1L12 21.2l-3.4-4.1h2.1v-3.8H6.9v2.1L2.8 12l4.1-3.4v2.1h3.8V6.9H8.6z' fill='%23ffffff' stroke='%234b5563' stroke-width='1.15' stroke-linejoin='round'/%3E%3C/svg%3E")
+      12 12,
+    all-scroll !important;
 }
 
 :global(.blocklyWidgetDiv),
 :global(.blocklyDropDownDiv),
 :global(.blocklyTooltipDiv) {
   z-index: 2100;
-}
-
-@media (max-width: 1440px) {
-  .template-editor-page__header {
-    padding: 0 16px;
-  }
-
-  .template-editor-page__identity {
-    gap: 10px;
-
-    strong {
-      max-width: 260px;
-    }
-  }
-}
-
-@media (max-width: 1180px) {
-  .template-editor-page__identity > span:not(.template-editor-page__status-tag),
-  .template-editor-page__shortcut {
-    display: none;
-  }
-
 }
 </style>

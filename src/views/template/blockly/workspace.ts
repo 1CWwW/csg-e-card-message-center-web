@@ -10,6 +10,11 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
 
 export const BLOCKLY_SCHEMA_VERSION = 1 as const
+export const TEMPLATE_LINKS_KEY = 'templateLinks'
+export const TEMPLATE_NODE_MODE_KEY = 'templateNodeMode'
+export const TEMPLATE_ENTRY_BLOCK_ID_KEY = 'templateEntryBlockId'
+export const TEMPLATE_NODE_ORDER_KEY = 'templateNodeOrder'
+export const TEMPLATE_LINKED_NODE_MODE = 'LINKED_NODES'
 
 const templateEditorTheme = Blockly.Theme.defineTheme('templateEditorTheme', {
   name: 'templateEditorTheme',
@@ -84,6 +89,92 @@ const templateEditorTheme = Blockly.Theme.defineTheme('templateEditorTheme', {
   },
 })
 
+const SVG_NAMESPACE = 'http://www.w3.org/2000/svg'
+
+const createSvgElement = <T extends keyof SVGElementTagNameMap>(
+  tagName: T,
+  attributes: Record<string, string>,
+): SVGElementTagNameMap[T] => {
+  const element = document.createElementNS(SVG_NAMESPACE, tagName)
+
+  Object.entries(attributes).forEach(([name, value]) => {
+    element.setAttribute(name, value)
+  })
+
+  return element
+}
+
+const replaceTrashcanIcon = (workspace: Blockly.WorkspaceSvg) => {
+  const trashcanElement = workspace.trashcan?.getFocusableElement()
+
+  if (!trashcanElement) {
+    return
+  }
+
+  trashcanElement.querySelectorAll('image, .blocklyTrashLid, .template-trash-icon').forEach((node) => {
+    node.remove()
+  })
+
+  const iconGroup = createSvgElement('g', {
+    class: 'template-trash-icon',
+    'aria-hidden': 'true',
+  })
+
+  iconGroup.append(
+    createSvgElement('rect', {
+      x: '0',
+      y: '-32',
+      width: '47',
+      height: '80',
+      class: 'template-trash-icon__hitbox',
+    }),
+    createSvgElement('path', {
+      d: 'M14 12H33',
+      class: 'template-trash-icon__stroke template-trash-icon__lid',
+    }),
+    createSvgElement('path', {
+      d: 'M20 8.5H27',
+      class: 'template-trash-icon__stroke',
+    }),
+    createSvgElement('rect', {
+      x: '15.5',
+      y: '16',
+      width: '16',
+      height: '23',
+      rx: '3.5',
+      class: 'template-trash-icon__body',
+    }),
+    createSvgElement('path', {
+      d: 'M20.5 20.5V34',
+      class: 'template-trash-icon__stroke template-trash-icon__line',
+    }),
+    createSvgElement('path', {
+      d: 'M26.5 20.5V34',
+      class: 'template-trash-icon__stroke template-trash-icon__line',
+    }),
+  )
+
+  trashcanElement.append(iconGroup)
+}
+
+const expandTrashcanDeleteArea = (workspace: Blockly.WorkspaceSvg) => {
+  const trashcan = workspace.trashcan
+
+  if (!trashcan) {
+    return
+  }
+
+  trashcan.getClientRect = () => {
+    const rect = trashcan.getFocusableElement().getBoundingClientRect()
+
+    if (rect.width <= 0 || rect.height <= 0) {
+      return null
+    }
+
+    return new Blockly.utils.Rect(rect.top - 56, rect.bottom + 28, rect.left - 72, rect.right + 28)
+  }
+}
+
 export const parseBlocklyDocument = (
   value: BlocklyJson | string | null | undefined,
 ): TemplateBlocklyDocument | null => {
@@ -153,8 +244,11 @@ export const createTemplateWorkspace = (
       colour: '#dfe7f1',
       snap: true,
     },
+    maxTrashcanContents: 0,
   })
 
+  replaceTrashcanIcon(workspace)
+  expandTrashcanDeleteArea(workspace)
   workspace.addChangeListener(changeListener)
   return workspace
 }
@@ -167,7 +261,14 @@ export const loadTemplateWorkspace = (
 
   try {
     workspace.clear()
-    Blockly.serialization.workspaces.load(state, workspace)
+    const {
+      [TEMPLATE_LINKS_KEY]: _templateLinks,
+      [TEMPLATE_NODE_MODE_KEY]: _templateNodeMode,
+      [TEMPLATE_ENTRY_BLOCK_ID_KEY]: _templateEntryBlockId,
+      [TEMPLATE_NODE_ORDER_KEY]: _templateNodeOrder,
+      ...blocklyState
+    } = state
+    Blockly.serialization.workspaces.load(blocklyState, workspace)
   } finally {
     Blockly.Events.enable()
     Blockly.svgResize(workspace)

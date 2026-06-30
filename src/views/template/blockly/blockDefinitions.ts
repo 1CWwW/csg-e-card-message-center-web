@@ -15,18 +15,6 @@ interface SceneParamBlock extends Blockly.Block {
   sceneParamState: SceneParamExtraState
 }
 
-interface ControlsIfBlock extends Blockly.Block {
-  elseIfCount_: number
-  hasElse_: boolean
-  // mutator 标记块上的临时属性，用于在重组时保留子积木连接
-  valueConnection_: Blockly.Connection | null
-  statementConnection_: Blockly.Connection | null
-  // 重组期间标记，change handler 借此忽略输入结构变化事件
-  _templateMutatorRecomposing?: boolean
-  updateShape_(): void
-  removeDynamicInputs_(): void
-}
-
 type LoopItemType = 'STRING' | 'NUMBER'
 
 interface LoopItemExtraState {
@@ -38,8 +26,25 @@ interface LoopItemBlock extends Blockly.Block {
   updateItemType_(): void
 }
 
+interface OperationExtraState {
+  operation: string
+}
+
+interface OperationBlock extends Blockly.Block {
+  operation_: string
+  operationLabel_: string
+}
+
+type TemplateFieldValidator = Blockly.FieldTextInputValidator | undefined
+
 class TemplateTextInput extends Blockly.FieldTextInput {
   private underline: SVGLineElement | null = null
+  private readonly placeholder: string
+
+  constructor(value = '', validator?: TemplateFieldValidator, placeholder = '') {
+    super(value, validator)
+    this.placeholder = placeholder
+  }
 
   override initView() {
     super.initView()
@@ -48,28 +53,57 @@ class TemplateTextInput extends Blockly.FieldTextInput {
       return
     }
 
+    root.classList.add('template-text-field')
+    if (this.placeholder) {
+      root.classList.add('template-text-field--placeholder')
+    }
+
     this.underline = document.createElementNS('http://www.w3.org/2000/svg', 'line')
     this.underline.setAttribute('class', 'template-field-underline')
-    this.underline.setAttribute('x1', '4')
-    this.underline.setAttribute('y1', '23')
-    this.underline.setAttribute('y2', '23')
+    this.underline.setAttribute('x1', '2')
+    this.underline.setAttribute('y1', '25')
+    this.underline.setAttribute('y2', '25')
     root.appendChild(this.underline)
+    this.updatePlaceholderClass()
+  }
+
+  protected override getDisplayText_() {
+    const displayText = super.getDisplayText_()
+    return displayText || this.placeholder
+  }
+
+  protected override doValueUpdate_(newValue: string) {
+    super.doValueUpdate_(newValue)
+    this.updatePlaceholderClass()
   }
 
   override getSize() {
     const size = super.getSize()
-    size.width = Math.min(170, Math.max(size.width, 68))
-    this.underline?.setAttribute('x2', String(Math.max(8, size.width - 4)))
+    size.width = Math.min(176, Math.max(size.width, this.placeholder ? 118 : 42))
+    this.underline?.setAttribute('x2', String(Math.max(12, size.width - 2)))
     return size
   }
 
   protected override widgetCreate_() {
     const input = super.widgetCreate_()
     input.classList.add('template-block-text-input')
+    if (this.placeholder) {
+      input.setAttribute('placeholder', this.placeholder)
+    }
+
     ;['pointerdown', 'mousedown', 'click', 'keydown'].forEach((eventName) => {
       input.addEventListener(eventName, (event) => event.stopPropagation())
     })
     return input
+  }
+
+  private updatePlaceholderClass() {
+    const root = this.getSvgRoot()
+    if (!root || !this.placeholder) {
+      return
+    }
+
+    root.classList.toggle('is-empty', !this.getValue())
   }
 }
 
@@ -88,19 +122,23 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 
 const readString = (value: unknown) => (typeof value === 'string' ? value : '')
 
-const readNumber = (value: unknown) => (typeof value === 'number' ? value : 0)
-
-const readBoolean = (value: unknown) => value === true
-
 const readLoopItemType = (value: unknown): LoopItemType =>
   value === 'NUMBER' ? 'NUMBER' : 'STRING'
 
-const CONTROLS_IF_MAX_ELSEIF = 10
-const TEMPLATE_CHAIN_CHECK = 'TemplateContentChain'
+const readOperation = (value: unknown, fallback: string) =>
+  typeof value === 'string' && value ? value : fallback
+
+const setOperationLabel = (block: OperationBlock) => {
+  block.setFieldValue(block.operationLabel_, 'OP_LABEL')
+}
 
 const getSceneParamColour = (paramType: string) => {
   if (paramType === 'NUMBER') {
     return '#5b7aa5'
+  }
+
+  if (paramType === 'TIME') {
+    return '#5ba58c'
   }
 
   if (paramType === 'STRING_ARRAY' || paramType === 'NUMBER_ARRAY') {
@@ -113,6 +151,10 @@ const getSceneParamColour = (paramType: string) => {
 const getSceneParamOutputCheck = (paramType: string) => {
   if (paramType === 'NUMBER') {
     return 'Number'
+  }
+
+  if (paramType === 'TIME') {
+    return 'Time'
   }
 
   if (paramType === 'STRING_ARRAY' || paramType === 'NUMBER_ARRAY') {
@@ -136,321 +178,37 @@ export const registerTemplateBlocks = () => {
   ) as Record<string, string>
 
   Blockly.setLocale(locale)
-  Blockly.common.defineBlocksWithJsonArray([
-    {
-      type: 'message_content',
-      message0: '消息内容 %1',
-      args0: [
-        {
-          type: 'input_value',
-          name: 'CONTENT',
-          check: 'String',
-        },
-      ],
-      inputsInline: true,
-      style: 'template_structure_blocks',
-      tooltip: '模板消息内容入口',
-      helpUrl: '',
+
+  Blockly.Blocks.message_content = {
+    init() {
+      this.appendValueInput('CONTENT').setCheck('String').appendField('拼接')
+      this.setOutput(true, 'String')
+      this.setStyle('text_blocks')
+      this.setTooltip('模板消息内容入口')
     },
-    {
-      type: 'amount_format',
-      message0: '金额格式化 %1',
-      args0: [
-        {
-          type: 'input_value',
-          name: 'VALUE',
-        },
-      ],
-      output: 'String',
-      style: 'format_blocks',
-      tooltip: '将金额参数格式化为文本',
-      helpUrl: '',
+  }
+
+  Blockly.Blocks.text = {
+    init() {
+      this.appendDummyInput()
+        .appendField('常量')
+        .appendField(new TemplateTextInput('', undefined, '输入文本...'), 'TEXT')
+      this.setOutput(true, 'String')
+      this.setStyle('text_blocks')
+      this.setTooltip('输入需要拼接到消息正文中的文本')
     },
-    {
-      type: 'time_format',
-      message0: '时间格式化 %1 格式 %2',
-      args0: [
-        {
-          type: 'input_value',
-          name: 'VALUE',
-        },
-        {
-          type: 'field_dropdown',
-          name: 'FORMAT',
-          options: [
-            ['yyyy-MM-dd HH:mm:ss', 'yyyy-MM-dd HH:mm:ss'],
-            ['yyyy-MM-dd', 'yyyy-MM-dd'],
-            ['HH:mm:ss', 'HH:mm:ss'],
-          ],
-        },
-      ],
-      output: 'String',
-      style: 'format_blocks',
-      tooltip: '将时间参数格式化为文本',
-      helpUrl: '',
-    },
-    {
-      type: 'math_arithmetic',
-      message0: '数学 %1 %2 %3',
-      args0: [
-        {
-          type: 'input_value',
-          name: 'A',
-          check: 'Number',
-        },
-        {
-          type: 'field_dropdown',
-          name: 'OP',
-          options: [
-            ['+', 'ADD'],
-            ['−', 'MINUS'],
-            ['×', 'MULTIPLY'],
-            ['÷', 'DIVIDE'],
-          ],
-        },
-        {
-          type: 'input_value',
-          name: 'B',
-          check: 'Number',
-        },
-      ],
-      inputsInline: true,
-      output: 'Number',
-      style: 'math_expression_blocks',
-      tooltip: '对两个数值执行四则运算',
-      helpUrl: '',
-    },
-    {
-      type: 'math_modulo',
-      message0: '数学 %1 %2 %3',
-      args0: [
-        {
-          type: 'input_value',
-          name: 'DIVIDEND',
-          check: 'Number',
-        },
-        {
-          type: 'field_label',
-          text: '%',
-        },
-        {
-          type: 'input_value',
-          name: 'DIVISOR',
-          check: 'Number',
-        },
-      ],
-      inputsInline: true,
-      output: 'Number',
-      style: 'math_expression_blocks',
-      tooltip: '计算两个数值相除后的余数',
-      helpUrl: '',
-    },
-    {
-      type: 'logic_compare',
-      message0: '比较 %1 %2 %3',
-      args0: [
-        {
-          type: 'input_value',
-          name: 'A',
-        },
-        {
-          type: 'field_dropdown',
-          name: 'OP',
-          options: [
-            ['=', 'EQ'],
-            ['≠', 'NEQ'],
-            ['<', 'LT'],
-            ['≤', 'LTE'],
-            ['>', 'GT'],
-            ['≥', 'GTE'],
-          ],
-        },
-        {
-          type: 'input_value',
-          name: 'B',
-        },
-      ],
-      inputsInline: true,
-      output: 'Boolean',
-      style: 'compare_expression_blocks',
-      tooltip: '比较两个表达式的值',
-      helpUrl: '',
-    },
-    {
-      type: 'logic_operation',
-      message0: '逻辑 %1 %2 %3',
-      args0: [
-        {
-          type: 'input_value',
-          name: 'A',
-          check: 'Boolean',
-        },
-        {
-          type: 'field_dropdown',
-          name: 'OP',
-          options: [
-            ['AND', 'AND'],
-            ['OR', 'OR'],
-          ],
-        },
-        {
-          type: 'input_value',
-          name: 'B',
-          check: 'Boolean',
-        },
-      ],
-      inputsInline: true,
-      output: 'Boolean',
-      style: 'logic_expression_blocks',
-      tooltip: '对两个布尔表达式执行逻辑运算',
-      helpUrl: '',
-    },
-    {
-      type: 'logic_negate',
-      message0: '逻辑 NOT %1',
-      args0: [
-        {
-          type: 'input_value',
-          name: 'BOOL',
-          check: 'Boolean',
-        },
-      ],
-      output: 'Boolean',
-      style: 'logic_expression_blocks',
-      tooltip: '对布尔表达式取反',
-      helpUrl: '',
-    },
-    {
-      type: 'string_contains',
-      message0: '比较 %1 包含 %2',
-      args0: [
-        {
-          type: 'input_value',
-          name: 'TEXT',
-          check: 'String',
-        },
-        {
-          type: 'input_value',
-          name: 'SUBSTRING',
-          check: 'String',
-        },
-      ],
-      inputsInline: true,
-      output: 'Boolean',
-      style: 'string_expression_blocks',
-      tooltip: '判断字符串是否包含指定子字符串',
-      helpUrl: '',
-    },
-    {
-      type: 'string_like',
-      message0: '比较 %1 匹配 %2',
-      args0: [
-        {
-          type: 'input_value',
-          name: 'TEXT',
-          check: 'String',
-        },
-        {
-          type: 'input_value',
-          name: 'PATTERN',
-          check: 'String',
-        },
-      ],
-      inputsInline: true,
-      output: 'Boolean',
-      style: 'string_expression_blocks',
-      tooltip: '按模式匹配字符串，% 为通配符',
-      helpUrl: '',
-    },
-    {
-      type: 'controls_forEach',
-      message0: '遍历 %1 每项输出 %2 分隔符 %3',
-      args0: [
-        {
-          type: 'input_value',
-          name: 'LIST',
-          check: ['StringArray', 'NumberArray'],
-        },
-        {
-          type: 'input_value',
-          name: 'BODY',
-          check: 'String',
-        },
-        {
-          type: 'field_input',
-          name: 'SEPARATOR',
-          text: '',
-        },
-      ],
-      inputsInline: false,
-      output: 'String',
-      style: 'loop_expression_blocks',
-      tooltip: '遍历字符串数组或数值数组，并拼接每一项的输出',
-      helpUrl: '',
-    },
-    // 条件分支积木的 mutator 标记块。
-    // 单独命名以避免覆盖 Blockly 内置的 controls_if_if / controls_if_elseif / controls_if_else。
-    {
-      type: 'template_controls_if_if',
-      message0: '如果',
-      nextStatement: null,
-      colour: '#f59e0b',
-      tooltip: '条件分支中的“如果”',
-      enableContextMenu: false,
-    },
-    {
-      type: 'template_controls_if_elseif',
-      message0: '否则如果',
-      previousStatement: null,
-      nextStatement: null,
-      colour: '#f59e0b',
-      tooltip: '条件分支中的“否则如果”',
-      enableContextMenu: false,
-    },
-    {
-      type: 'template_controls_if_else',
-      message0: '否则',
-      previousStatement: null,
-      colour: '#f59e0b',
-      tooltip: '条件分支中的“否则”',
-      enableContextMenu: false,
-    },
-  ])
+  }
 
   Blockly.Blocks.text_join = {
     init() {
-      this.appendValueInput('ADD0').setCheck('String').appendField('拼接')
-      this.appendValueInput('ADD1').setCheck('String').appendField('+')
-      this.setInputsInline(true)
+      this.appendDummyInput()
+        .appendField('拼接')
+        .appendField(new TemplateTextInput('', undefined, '输入文本...'), 'TEXT')
+      this.appendValueInput('VALUE').setCheck(['String', 'Number', 'Time'])
       this.setOutput(true, 'String')
+      this.setInputsInline(true)
       this.setStyle('text_blocks')
-      this.setTooltip('拼接两个文本结果，多段内容可通过多个拼接节点连接')
-    },
-  }
-
-  Blockly.Blocks.amount_format = {
-    init() {
-      this.appendValueInput('VALUE').setCheck('Number').appendField('金额')
-      this.appendDummyInput()
-        .appendField('小数位：')
-        .appendField(new TemplateTextInput('2', decimalValidator), 'DECIMALS')
-      this.setInputsInline(true)
-      this.setOutput(true, 'String')
-      this.setStyle('format_blocks')
-      this.setTooltip('将金额参数格式化为文本，小数位只允许 0 至 6')
-    },
-  }
-
-  Blockly.Blocks.time_format = {
-    init() {
-      this.appendValueInput('VALUE').setCheck(['Time', 'String']).appendField('时间')
-      this.appendDummyInput()
-        .appendField('格式：')
-        .appendField(new TemplateTextInput('yyyy-MM-dd HH:mm'), 'FORMAT')
-      this.setInputsInline(true)
-      this.setOutput(true, 'String')
-      this.setStyle('format_blocks')
-      this.setTooltip('将时间参数按指定格式转换为文本')
+      this.setTooltip('输入固定文本，并可连接参数或格式化结果继续拼接')
     },
   }
 
@@ -466,23 +224,12 @@ export const registerTemplateBlocks = () => {
       this.appendDummyInput()
         .appendField('参数')
         .appendField(new Blockly.FieldLabelSerializable('参数'), 'PARAM_LABEL')
-        .appendField(new Blockly.FieldLabelSerializable(''), 'PARAM_NAME')
       this.setOutput(true, getSceneParamOutputCheck(this.sceneParamState.paramType))
       this.setColour(getSceneParamColour(this.sceneParamState.paramType))
-      this.setTooltip(() => {
-        const { paramName, paramType } = this.sceneParamState
-        return [paramName ? `参数名：${paramName}` : '', paramType ? `类型：${paramType}` : '']
-          .filter(Boolean)
-          .join('\n') || '读取当前模板所属场景的参数值'
-      })
+      this.setTooltip('读取当前模板所属场景的参数值')
     },
     saveExtraState(this: SceneParamBlock): SceneParamExtraState {
-      return {
-        sceneId: this.sceneParamState.sceneId,
-        paramId: this.sceneParamState.paramId,
-        paramName: this.sceneParamState.paramName,
-        paramType: this.sceneParamState.paramType,
-      }
+      return { ...this.sceneParamState }
     },
     loadExtraState(this: SceneParamBlock, state: unknown) {
       if (!isRecord(state)) {
@@ -496,69 +243,138 @@ export const registerTemplateBlocks = () => {
         paramType: readString(state.paramType),
         paramLabel: readString(state.paramLabel),
       }
-
       this.setColour(getSceneParamColour(this.sceneParamState.paramType))
       this.outputConnection?.setCheck(getSceneParamOutputCheck(this.sceneParamState.paramType))
-      const paramLabel = this.sceneParamState.paramLabel || this.sceneParamState.paramName || '参数'
-      this.setFieldValue(paramLabel, 'PARAM_LABEL')
-      this.setFieldValue('', 'PARAM_NAME')
+      this.setFieldValue(
+        this.sceneParamState.paramLabel || this.sceneParamState.paramName || '参数',
+        'PARAM_LABEL',
+      )
     },
   }
 
-  // 兼容旧模板中已经保存的 scene_param_ref 类型。
   Blockly.Blocks.scene_param_ref = Blockly.Blocks.scene_param_value
 
-  Blockly.Blocks.text = {
+  Blockly.Blocks.amount_format = {
     init() {
+      this.appendValueInput('VALUE').setCheck('Number').appendField('金额')
       this.appendDummyInput()
-        .appendField('常量')
-        .appendField(new TemplateTextInput(''), 'TEXT')
+        .appendField('格式化(小数位:')
+        .appendField(new TemplateTextInput('2', decimalValidator), 'DECIMALS')
+        .appendField(')')
+      this.setInputsInline(true)
       this.setOutput(true, 'String')
-      this.setStyle('text_blocks')
-      this.setTooltip('输入需要拼接到消息正文中的文本')
+      this.setStyle('format_blocks')
+      this.setTooltip('将金额参数格式化为文本，小数位只允许 0 至 6')
+    },
+  }
+
+  Blockly.Blocks.time_format = {
+    init() {
+      this.appendValueInput('VALUE').setCheck(['Time', 'String']).appendField('时间')
+      this.appendDummyInput()
+        .appendField('格式化(格式:')
+        .appendField(new TemplateTextInput('yyyy-MM-dd HH:mm:ss'), 'FORMAT')
+        .appendField(')')
+      this.setInputsInline(true)
+      this.setOutput(true, 'String')
+      this.setStyle('format_blocks')
+      this.setTooltip('将时间参数按指定格式转换为文本')
+    },
+  }
+
+  Blockly.Blocks.logic_operation = {
+    init(this: OperationBlock) {
+      this.operation_ = 'AND'
+      this.operationLabel_ = 'AND / OR 逻辑运算'
+      this.appendDummyInput()
+        .appendField('逻辑')
+        .appendField(new Blockly.FieldLabelSerializable(this.operationLabel_), 'OP_LABEL')
+      this.setOutput(true, 'Boolean')
+      this.setStyle('logic_expression_blocks')
+      this.setTooltip('按左右连线中的相邻条件执行逻辑运算')
+    },
+    saveExtraState(this: OperationBlock): OperationExtraState {
+      return { operation: this.operation_ }
+    },
+    loadExtraState(this: OperationBlock, state: unknown) {
+      this.operation_ = isRecord(state) ? readOperation(state.operation, 'AND') : 'AND'
+      this.operationLabel_ = this.operation_ === 'OR' ? 'OR 逻辑或' : 'AND 逻辑且'
+      setOperationLabel(this)
+    },
+  }
+
+  Blockly.Blocks.logic_negate = {
+    init() {
+      this.appendValueInput('BOOL').setCheck('Boolean').appendField('NOT')
+      this.setOutput(true, 'Boolean')
+      this.setStyle('logic_expression_blocks')
+      this.setTooltip('对布尔表达式取反')
+    },
+  }
+
+  Blockly.Blocks.controls_if = {
+    init() {
+      this.appendDummyInput().appendField('if / else 条件分支')
+      this.setOutput(true, 'String')
+      this.setStyle('logic_expression_blocks')
+      this.setTooltip('按连线关系处理条件分支')
+    },
+  }
+
+  Blockly.Blocks.logic_compare = {
+    init(this: OperationBlock) {
+      this.operation_ = 'EQ'
+      this.operationLabel_ = '等于 ='
+      this.appendDummyInput()
+        .appendField('比较')
+        .appendField(new Blockly.FieldLabelSerializable(this.operationLabel_), 'OP_LABEL')
+      this.setOutput(true, 'Boolean')
+      this.setStyle('compare_expression_blocks')
+      this.setTooltip('按连线中的相邻值执行比较')
+    },
+    saveExtraState(this: OperationBlock): OperationExtraState {
+      return { operation: this.operation_ }
+    },
+    loadExtraState(this: OperationBlock, state: unknown) {
+      this.operation_ = isRecord(state) ? readOperation(state.operation, 'EQ') : 'EQ'
+      const labels: Record<string, string> = {
+        GT: '大于 >',
+        LT: '小于 <',
+        EQ: '等于 =',
+        NEQ: '不等于 !=',
+        GTE: '大于等于 >=',
+        LTE: '小于等于 <=',
+      }
+      this.operationLabel_ = labels[this.operation_] ?? labels.EQ
+      setOperationLabel(this)
+    },
+  }
+
+  Blockly.Blocks.string_contains = {
+    init() {
+      this.appendDummyInput().appendField('包含 (in)')
+      this.setOutput(true, 'Boolean')
+      this.setStyle('compare_expression_blocks')
+      this.setTooltip('按连线中的相邻字符串判断包含关系')
+    },
+  }
+
+  Blockly.Blocks.string_like = {
+    init() {
+      this.appendDummyInput().appendField('匹配 (like)')
+      this.setOutput(true, 'Boolean')
+      this.setStyle('compare_expression_blocks')
+      this.setTooltip('按连线中的相邻字符串执行模式匹配')
     },
   }
 
   Blockly.Blocks.controls_forEach = {
     init() {
-      this.appendValueInput('LIST')
-        .setCheck(['StringArray', 'NumberArray'])
-        .appendField('循环')
-        .appendField('for-each')
-      this.appendValueInput('BODY')
-        .setCheck('String')
-        .appendField('输出')
-      this.appendDummyInput()
-        .appendField('分隔符')
-        .appendField(new TemplateTextInput(''), 'SEPARATOR')
-      this.setInputsInline(false)
+      this.appendDummyInput().appendField('for-each 遍历数组')
       this.setOutput(true, 'String')
       this.setStyle('loop_expression_blocks')
-      this.setTooltip('遍历字符串数组或数值数组，并拼接每一项的输出')
+      this.setTooltip('按连线关系遍历数组并输出内容')
     },
-  }
-
-  Blockly.Blocks.controls_forEach.onchange = function (
-    this: Blockly.Block,
-    event: Blockly.Events.Abstract,
-  ) {
-    if (event.isUiEvent || !this.workspace || this.isInFlyout) {
-      return
-    }
-
-    let parent = this.getSurroundParent()
-
-    while (parent) {
-      if (parent.type === 'controls_forEach') {
-        this.setWarningText('不支持嵌套循环', 'nested-loop')
-        this.unplug(true)
-        return
-      }
-
-      parent = parent.getSurroundParent()
-    }
-
-    this.setWarningText(null, 'nested-loop')
   }
 
   Blockly.Blocks.loop_item_value = {
@@ -568,269 +384,59 @@ export const registerTemplateBlocks = () => {
         .appendField('循环项')
         .appendField(new Blockly.FieldLabelSerializable('文本项'), 'ITEM_TYPE_LABEL')
       this.setOutput(true, 'String')
-      this.setStyle('loop_item_blocks')
+      this.setStyle('loop_expression_blocks')
       this.setTooltip('读取当前循环项的值')
       this.updateItemType_()
     },
-
     updateItemType_(this: LoopItemBlock) {
       const isNumber = this.itemType_ === 'NUMBER'
       this.outputConnection?.setCheck(isNumber ? 'Number' : 'String')
       this.setFieldValue(isNumber ? '数值项' : '文本项', 'ITEM_TYPE_LABEL')
     },
-
     saveExtraState(this: LoopItemBlock): LoopItemExtraState {
-      return {
-        itemType: this.itemType_,
-      }
+      return { itemType: this.itemType_ }
     },
-
     loadExtraState(this: LoopItemBlock, state: unknown) {
       this.itemType_ = isRecord(state) ? readLoopItemType(state.itemType) : 'STRING'
       this.updateItemType_()
     },
+  }
 
-    onchange(this: LoopItemBlock, event: Blockly.Events.Abstract) {
-      if (event.isUiEvent || !this.workspace || this.isInFlyout) {
-        return
+  Blockly.Blocks.math_arithmetic = {
+    init(this: OperationBlock) {
+      this.operation_ = 'ADD'
+      this.operationLabel_ = '加法 +'
+      this.appendDummyInput()
+        .appendField('运算')
+        .appendField(new Blockly.FieldLabelSerializable(this.operationLabel_), 'OP_LABEL')
+      this.setOutput(true, 'Number')
+      this.setStyle('math_expression_blocks')
+      this.setTooltip('按连线中的相邻数值执行数学运算')
+    },
+    saveExtraState(this: OperationBlock): OperationExtraState {
+      return { operation: this.operation_ }
+    },
+    loadExtraState(this: OperationBlock, state: unknown) {
+      this.operation_ = isRecord(state) ? readOperation(state.operation, 'ADD') : 'ADD'
+      const labels: Record<string, string> = {
+        ADD: '加法 +',
+        MINUS: '减法 -',
+        MULTIPLY: '乘法 ×',
+        DIVIDE: '除法 ÷',
       }
-
-      let parent = this.getSurroundParent()
-
-      while (parent && parent.type !== 'controls_forEach') {
-        parent = parent.getSurroundParent()
-      }
-
-      this.setWarningText(
-        parent ? null : '当前元素只能在循环的 BODY 中使用',
-        'outside-loop',
-      )
+      this.operationLabel_ = labels[this.operation_] ?? labels.ADD
+      setOperationLabel(this)
     },
   }
 
-  // 覆盖 Blockly 内置的语句型 controls_if，使用项目自定义的字符串条件分支积木。
-  // 直接对 Blockly.Blocks['controls_if'] 赋值以确保覆盖 import 'blockly/blocks' 中注册的版本。
-  // 整个节点输出 String；IFn 接受 Boolean；DOn 与 ELSE 接受 String。
-  Blockly.Blocks.controls_if = {
-    init(this: ControlsIfBlock) {
-      this.elseIfCount_ = 0
-      this.hasElse_ = true
-      this.setOutput(true, 'String')
-      this.setStyle('logic_expression_blocks')
-      this.setTooltip('根据条件返回字符串')
-      this.updateShape_()
-      this.setMutator(
-        new Blockly.icons.MutatorIcon(
-          ['template_controls_if_elseif', 'template_controls_if_else'],
-          this as unknown as Blockly.BlockSvg,
-        ),
-      )
-    },
-
-    // 重建积木的输入结构，根据当前分支数量决定要追加哪些 IF/DO/ELSE。
-    updateShape_(this: ControlsIfBlock) {
-      // 基础 IF0 / DO0 永远存在；动态分支在它后面按顺序追加。
-      if (!this.getInput('IF0')) {
-        this.appendValueInput('IF0').setCheck('Boolean').appendField('条件').appendField('if')
-        this.appendValueInput('DO0').setCheck('String').appendField('则')
-      }
-
-      // 清理已有的动态分支输入，避免重复
-      this.removeDynamicInputs_()
-
-      for (let i = 1; i <= this.elseIfCount_; i++) {
-        this.appendValueInput(`IF${i}`).setCheck('Boolean').appendField('否则如果')
-        this.appendValueInput(`DO${i}`).setCheck('String').appendField('则')
-      }
-
-      if (this.hasElse_) {
-        this.appendValueInput('ELSE').setCheck('String').appendField('否则')
-      }
-    },
-
-    // 移除所有动态 IF/DO/ELSE 输入，保留基础的 IF0/DO0。
-    // 必须按当前真实输入清理，不能依赖即将应用的新计数，否则撤销/回显时
-    // 旧 ELSE 或较多的 ELSE-IF 输入可能残留并打乱分支顺序。
-    removeDynamicInputs_(this: ControlsIfBlock) {
-      const dynamicInputNames = this.inputList
-        .map((input) => input.name)
-        .filter(
-          (name) =>
-            name === 'ELSE' ||
-            name === 'ROW_ELSE' ||
-            /^IF[1-9]\d*$/.test(name) ||
-            /^DO[1-9]\d*$/.test(name) ||
-            /^ROW_IF[1-9]\d*$/.test(name) ||
-            /^ROW_DO[1-9]\d*$/.test(name),
-        )
-
-      dynamicInputNames.forEach((name) => this.removeInput(name))
-    },
-
-    // mutator 打开时调用：把当前分支结构镜像到 mutator 工作区。
-    // 第一个"如果"标记块固定存在（不可删），其余按分支数量链接。
-    decompose(this: ControlsIfBlock, workspace: Blockly.WorkspaceSvg) {
-      const ifBlock = workspace.newBlock('template_controls_if_if') as Blockly.BlockSvg
-      ifBlock.initSvg()
-      let connection: Blockly.Connection | null = ifBlock.nextConnection
-
-      for (let i = 0; i < this.elseIfCount_; i++) {
-        const elseifBlock = workspace.newBlock('template_controls_if_elseif') as Blockly.BlockSvg
-        elseifBlock.initSvg()
-        if (connection && elseifBlock.previousConnection) {
-          connection.connect(elseifBlock.previousConnection)
-        }
-        connection = elseifBlock.nextConnection
-      }
-
-      if (this.hasElse_) {
-        const elseBlock = workspace.newBlock('template_controls_if_else') as Blockly.BlockSvg
-        elseBlock.initSvg()
-        if (connection && elseBlock.previousConnection) {
-          connection.connect(elseBlock.previousConnection)
-        }
-      }
-
-      return ifBlock
-    },
-
-    // mutator 关闭时调用：从 mutator 链中读出新的分支数量并重建输入。
-    compose(this: ControlsIfBlock, rootBlock: Blockly.Block) {
-      // 标记当前积木处于 mutator 重组过程，change handler 忽略此期间的输入变化事件，
-      // 避免"打开 mutator 但未修改"被误标 dirty。
-      this._templateMutatorRecomposing = true
-      try {
-        // 收集所有 elseif/else 上的子积木连接，便于重建后回连
-        const preservedValueConnections: (Blockly.Connection | null)[] = [null]
-        const preservedStatementConnections: (Blockly.Connection | null)[] = [null]
-        let preservedElseConnection: Blockly.Connection | null = null
-
-        let elseIfCount = 0
-        let hasElse = false
-
-        let clauseBlock = rootBlock.nextConnection?.targetBlock() ?? null
-        while (clauseBlock && !clauseBlock.isInsertionMarker()) {
-          const typed = clauseBlock as ControlsIfBlock
-          if (clauseBlock.type === 'template_controls_if_elseif') {
-            elseIfCount++
-            preservedValueConnections.push(typed.valueConnection_ ?? null)
-            preservedStatementConnections.push(typed.statementConnection_ ?? null)
-          } else if (clauseBlock.type === 'template_controls_if_else') {
-            hasElse = true
-            preservedElseConnection = typed.statementConnection_ ?? null
-          }
-          clauseBlock = clauseBlock.getNextBlock()
-        }
-
-        // 限制 else-if 数量，避免越界
-        if (elseIfCount > CONTROLS_IF_MAX_ELSEIF) {
-          elseIfCount = CONTROLS_IF_MAX_ELSEIF
-          preservedValueConnections.length = elseIfCount + 1
-          preservedStatementConnections.length = elseIfCount + 1
-        }
-
-        // 更新形状
-        this.elseIfCount_ = elseIfCount
-        this.hasElse_ = hasElse
-        this.updateShape_()
-
-        // 回连子积木
-        for (let i = 1; i <= elseIfCount; i++) {
-          const valueConn = preservedValueConnections[i]
-          const stmtConn = preservedStatementConnections[i]
-          if (valueConn) {
-            valueConn.reconnect(this as unknown as Blockly.Block, `IF${i}`)
-          }
-          if (stmtConn) {
-            stmtConn.reconnect(this as unknown as Blockly.Block, `DO${i}`)
-          }
-        }
-        if (hasElse && preservedElseConnection) {
-          preservedElseConnection.reconnect(this as unknown as Blockly.Block, 'ELSE')
-        }
-      } finally {
-        this._templateMutatorRecomposing = false
-      }
-    },
-
-    // 在 compose 之前由 mutator 工作区事件回调，记录每个分支标记块上连接的子积木。
-    saveConnections(this: ControlsIfBlock, rootBlock: Blockly.Block) {
-      let index = 1
-      let clauseBlock = rootBlock.nextConnection?.targetBlock() ?? null
-      while (clauseBlock && !clauseBlock.isInsertionMarker()) {
-        const typed = clauseBlock as ControlsIfBlock
-        if (clauseBlock.type === 'template_controls_if_elseif') {
-          const ifInput = this.getInput(`IF${index}`)
-          const doInput = this.getInput(`DO${index}`)
-          typed.valueConnection_ = ifInput?.connection?.targetConnection ?? null
-          typed.statementConnection_ = doInput?.connection?.targetConnection ?? null
-          index++
-        } else if (clauseBlock.type === 'template_controls_if_else') {
-          const elseInput = this.getInput('ELSE')
-          typed.statementConnection_ = elseInput?.connection?.targetConnection ?? null
-        }
-        clauseBlock = clauseBlock.getNextBlock()
-      }
-    },
-
-    saveExtraState(this: ControlsIfBlock) {
-      return {
-        elseIfCount: this.elseIfCount_,
-        hasElse: this.hasElse_,
-      }
-    },
-
-    loadExtraState(this: ControlsIfBlock, state: unknown) {
-      if (!isRecord(state)) {
-        this.elseIfCount_ = 0
-        this.hasElse_ = true
-        this.updateShape_()
-        return
-      }
-
-      const rawCount = readNumber(state.elseIfCount)
-      this.elseIfCount_ = Math.min(
-        Math.max(0, Math.floor(rawCount)),
-        CONTROLS_IF_MAX_ELSEIF,
-      )
-      this.hasElse_ = readBoolean(state.hasElse)
-      this.updateShape_()
+  Blockly.Blocks.math_modulo = {
+    init() {
+      this.appendDummyInput().appendField('取余 %')
+      this.setOutput(true, 'Number')
+      this.setStyle('math_expression_blocks')
+      this.setTooltip('按连线中的相邻数值计算余数')
     },
   }
-
-  const chainBlockTypes = [
-    'message_content',
-    'scene_param_value',
-    'scene_param_ref',
-    'text',
-    'text_join',
-    'amount_format',
-    'time_format',
-    'math_arithmetic',
-    'math_modulo',
-    'logic_compare',
-    'logic_operation',
-    'logic_negate',
-    'string_contains',
-    'string_like',
-    'controls_forEach',
-    'loop_item_value',
-    'controls_if',
-  ]
-
-  chainBlockTypes.forEach((type) => {
-    const definition = Blockly.Blocks[type]
-    if (!definition?.init) {
-      return
-    }
-
-    const originalInit = definition.init
-    definition.init = function (this: Blockly.Block) {
-      originalInit.call(this)
-      this.setPreviousStatement(true, TEMPLATE_CHAIN_CHECK)
-      this.setNextStatement(true, TEMPLATE_CHAIN_CHECK)
-    }
-  })
 
   registered = true
 }
@@ -848,20 +454,19 @@ export const syncSceneParamBlockLabels = (
     }
 
     const extraState: unknown = block.saveExtraState?.()
-
     if (!isRecord(extraState)) {
       return
     }
 
-    const param = paramsById.get(readString(extraState.paramId))
-      ?? paramsByName.get(readString(extraState.paramName))
+    const param =
+      paramsById.get(readString(extraState.paramId)) ??
+      paramsByName.get(readString(extraState.paramName))
 
     if (!param) {
       return
     }
 
     block.setFieldValue(param.paramLabel || param.paramName, 'PARAM_LABEL')
-    block.setFieldValue('', 'PARAM_NAME')
   })
 }
 
@@ -877,35 +482,15 @@ export const validateSceneParamBlocks = (
     }
 
     const extraState: unknown = block.saveExtraState?.()
-
     if (!isRecord(extraState)) {
-      block.setWarningText('参数 paramName 为空', 'scene-param')
+      block.setWarningText('参数信息为空', 'scene-param')
       return
     }
 
     const paramName = readString(extraState.paramName)
-    const sceneId = readString(extraState.sceneId)
-    const paramType = readString(extraState.paramType)
-
-    if (!paramName) {
-      block.setWarningText('参数 paramName 为空', 'scene-param')
-      return
-    }
-
-    if (sceneId && sceneId !== toolboxData.sceneId) {
-      block.setWarningText(`参数 ${paramName} 不属于当前场景`, 'scene-param')
-      return
-    }
-
     const param = paramsByName.get(paramName)
-
     if (!param) {
-      block.setWarningText(`参数 ${paramName} 已不存在`, 'scene-param')
-      return
-    }
-
-    if (paramType && param.paramType !== paramType) {
-      block.setWarningText(`参数 ${paramName} 的类型与当前积木不匹配`, 'scene-param')
+      block.setWarningText(`参数 ${paramName || '未知'} 已不存在`, 'scene-param')
       return
     }
 
