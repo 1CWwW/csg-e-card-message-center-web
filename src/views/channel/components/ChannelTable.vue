@@ -43,6 +43,8 @@ const getTypeConfigSummary = (row: ChannelItem) => {
 
   return row.typeConfigSummary || '无需额外配置'
 }
+
+const isAllUnits = (row: ChannelItem) => (row.unitCount ?? 0) === 0
 </script>
 
 <template>
@@ -74,14 +76,15 @@ const getTypeConfigSummary = (row: ChannelItem) => {
         </span>
       </template>
     </el-table-column>
-    <el-table-column label="类型参数" show-overflow-tooltip>
+    <el-table-column class-name="channel-table__config-cell" label="类型参数" show-overflow-tooltip>
       <template #default="{ row }">
         {{ getTypeConfigSummary(row) }}
       </template>
     </el-table-column>
-    <el-table-column label="适用单位" width="120" align="center">
+    <el-table-column label="适用单位" width="150" align="center">
       <template #default="{ row }">
-        <el-button class="channel-table__unit" link type="primary" @click="emit('show-units', row)">
+        <span v-if="isAllUnits(row)" class="channel-table__unit-all">全部单位（默认）</span>
+        <el-button v-else class="channel-table__unit" link type="primary" @click="emit('show-units', row)">
           {{ row.unitCount }} 个单位
         </el-button>
       </template>
@@ -150,6 +153,11 @@ const getTypeConfigSummary = (row: ChannelItem) => {
 
   :deep(.channel-table__name-cell .cell) {
     padding-left: 24px;
+    color: var(--app-text-primary);
+  }
+
+  :deep(.channel-table__config-cell .cell) {
+    color: var(--app-text-primary);
   }
 
   :deep(.el-scrollbar__bar.is-horizontal) {
@@ -162,7 +170,6 @@ const getTypeConfigSummary = (row: ChannelItem) => {
   align-items: center;
   gap: 8px;
   color: var(--app-color-primary);
-  font-weight: 700;
 }
 
 .channel-table__type.is-SMS {
@@ -183,12 +190,15 @@ const getTypeConfigSummary = (row: ChannelItem) => {
 
 .channel-table__unit {
   color: var(--app-color-primary);
-  font-weight: 700;
 
   &:hover {
     color: var(--app-color-primary-dark);
     text-decoration: underline;
   }
+}
+
+.channel-table__unit-all {
+  color: var(--app-text-primary);
 }
 
 .channel-table__priority {

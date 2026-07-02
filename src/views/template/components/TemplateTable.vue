@@ -31,7 +31,7 @@ const formatDateTime = (value?: string) => {
 
 const displayText = (value?: string) => value || '-'
 const getUnitText = (row: TemplateListItem) =>
-  (row.unitCount ?? 0) === 0 ? '全量适用' : `${row.unitCount} 个单位`
+  (row.unitCount ?? 0) === 0 ? '全部单位（默认）' : `${row.unitCount} 个单位`
 const isBusy = () => Boolean(props.operationLoadingKey)
 </script>
 
@@ -54,7 +54,7 @@ const isBusy = () => Boolean(props.operationLoadingKey)
         <span class="template-table__name">{{ displayText(row.templateName) }}</span>
       </template>
     </el-table-column>
-    <el-table-column label="所属场景" min-width="145">
+    <el-table-column class-name="template-table__scene-cell" label="所属场景" min-width="145">
       <template #default="{ row }">
         <el-button
           v-if="row.sceneId && row.sceneName"
@@ -65,7 +65,7 @@ const isBusy = () => Boolean(props.operationLoadingKey)
         >
           {{ row.sceneName }}
         </el-button>
-        <span v-else>{{ displayText(row.sceneName) }}</span>
+        <span v-else class="template-table__scene-text">{{ displayText(row.sceneName) }}</span>
       </template>
     </el-table-column>
     <el-table-column label="渠道类型" width="100">
@@ -76,7 +76,7 @@ const isBusy = () => Boolean(props.operationLoadingKey)
         </span>
       </template>
     </el-table-column>
-    <el-table-column label="适用单位" width="90" align="center">
+    <el-table-column label="适用单位" width="132" align="center">
       <template #default="{ row }">
         <span v-if="(row.unitCount ?? 0) === 0" class="template-table__unit-all">
           {{ getUnitText(row) }}
@@ -109,12 +109,12 @@ const isBusy = () => Boolean(props.operationLoadingKey)
         />
       </template>
     </el-table-column>
-    <el-table-column label="创建时间" width="130">
+    <el-table-column label="创建时间" width="112">
       <template #default="{ row }">
         {{ formatDateTime(row.createdAt) }}
       </template>
     </el-table-column>
-    <el-table-column label="更新时间" width="130">
+    <el-table-column label="更新时间" width="112">
       <template #default="{ row }">
         {{ formatDateTime(row.updatedAt || row.createdAt) }}
       </template>
@@ -181,20 +181,42 @@ const isBusy = () => Boolean(props.operationLoadingKey)
   :deep(.template-table__operation-column .cell) {
     overflow: visible;
   }
+
+  :deep(.template-table__scene-cell .cell) {
+    text-align: left;
+    white-space: normal;
+  }
 }
 
 .template-table__name {
   color: var(--app-text-primary);
   font-size: 13px;
-  font-weight: 600;
 }
 
 .template-table__scene-link {
+  display: block;
   max-width: 100%;
   overflow: hidden;
-  font-weight: 600;
+  justify-content: flex-start;
+  text-align: left;
   text-overflow: ellipsis;
-  white-space: nowrap;
+  vertical-align: middle;
+  white-space: normal;
+
+  :deep(span) {
+    display: inline;
+    line-height: 20px;
+    text-align: left;
+    white-space: normal;
+    word-break: break-all;
+  }
+}
+
+.template-table__scene-text {
+  display: block;
+  line-height: 20px;
+  text-align: left;
+  word-break: break-all;
 }
 
 .template-table__type {
@@ -202,7 +224,6 @@ const isBusy = () => Boolean(props.operationLoadingKey)
   align-items: center;
   gap: 7px;
   color: var(--app-color-primary);
-  font-weight: 650;
 }
 
 .template-table__type.is-SMS {
@@ -221,12 +242,9 @@ const isBusy = () => Boolean(props.operationLoadingKey)
   color: #16a34a;
 }
 
-.template-table__unit {
-  font-weight: 650;
-}
-
 .template-table__unit-all {
-  color: var(--app-text-secondary);
+  color: var(--app-text-primary);
+  white-space: nowrap;
 }
 
 .template-table__tag {
@@ -284,7 +302,6 @@ const isBusy = () => Boolean(props.operationLoadingKey)
   :deep(.el-button) {
     margin-left: 0;
     padding: 0;
-    font-weight: 600;
   }
 
   :deep(.el-button.is-editor) {

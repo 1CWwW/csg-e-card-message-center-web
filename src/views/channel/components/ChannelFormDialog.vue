@@ -51,6 +51,7 @@ const emit = defineEmits<{
 }>()
 
 const formRef = ref<FormInstance>()
+const allUnits = ref(true)
 
 const formModel = reactive<ChannelFormModel>({
   channelName: '',
@@ -124,15 +125,6 @@ const formRules = reactive<FormRules<ChannelFormModel>>({
   appId: [{ validator: validateTypeConfig, trigger: 'blur' }],
   priority: [{ validator: validatePriority, trigger: 'blur' }],
   status: [{ required: true, message: '请选择状态', trigger: 'change' }],
-  unitIds: [
-    {
-      type: 'array',
-      required: true,
-      min: 1,
-      message: '请至少选择一个适用单位',
-      trigger: 'change',
-    },
-  ],
 })
 
 const resetForm = () => {
@@ -144,6 +136,7 @@ const resetForm = () => {
   formModel.priority = 1
   formModel.status = 1
   formModel.unitIds = []
+  allUnits.value = true
 
   nextTick(() => {
     formRef.value?.clearValidate()
@@ -159,11 +152,18 @@ const fillEditForm = (channel: ChannelItem) => {
   formModel.priority = channel.priority
   formModel.status = channel.status ?? 1
   formModel.unitIds = [...new Set(channel.unitIds || [])]
+  allUnits.value = formModel.unitIds.length === 0
 
   nextTick(() => {
     formRef.value?.clearValidate()
   })
 }
+
+watch(allUnits, (checked) => {
+  if (checked) {
+    formModel.unitIds = []
+  }
+})
 
 watch(
   () => props.modelValue,
@@ -340,14 +340,21 @@ const submitForm = async () => {
         <el-form-item label="状态" prop="status">
           <StatusSwitch v-model="formModel.status" />
         </el-form-item>
-        <el-form-item label="适用单位" prop="unitIds">
+        <el-form-item label="适用单位范围">
+          <el-checkbox v-model="allUnits" class="channel-dialog__all-units">
+            全量适用（不限制单位）
+          </el-checkbox>
           <UnitTreeSelect
             v-model="formModel.unitIds"
             multiple
             :data="unitTree"
             :loading="unitTreeLoading"
-            placeholder="请选择适用单位"
+            :disabled="allUnits"
+            placeholder="点击选择适用单位"
           />
+          <span class="channel-dialog__unit-hint">
+            留空或勾选“全量适用”表示该渠道对所有单位生效；选择具体单位后仅对选中单位生效。
+          </span>
         </el-form-item>
       </el-form>
     </div>
@@ -378,6 +385,25 @@ const submitForm = async () => {
   margin-left: 10px;
   color: var(--app-text-secondary);
   font-size: 12px;
+}
+
+.channel-dialog__all-units {
+  width: 100%;
+  margin-bottom: 8px;
+
+  :deep(.el-checkbox__label) {
+    color: var(--app-text-primary);
+    white-space: normal;
+  }
+}
+
+.channel-dialog__unit-hint {
+  display: block;
+  width: 100%;
+  margin-top: 4px;
+  color: var(--app-text-secondary);
+  font-size: 11px;
+  line-height: 18px;
 }
 
 .channel-dialog__confirm {
