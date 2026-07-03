@@ -7,6 +7,7 @@ import {
   getRecordDetail,
   getRecordList,
   getRecordOverview,
+  getRecordResendLogs,
   resendRecord,
 } from '../../api/record'
 import { getChannelTypeLabel } from '../../types/channel'
@@ -17,6 +18,7 @@ import type {
   MessageRecordListItem,
   MessageRecordOverview,
   MessageRecordQuery,
+  MessageRecordResendLogVO,
 } from '../../types/record'
 import RecordDetailDrawer from './components/RecordDetailDrawer.vue'
 import RecordFilter from './components/RecordFilter.vue'
@@ -38,6 +40,10 @@ const detailLoading = ref(false)
 const detailError = ref('')
 const currentDetail = ref<MessageRecordDetail | null>(null)
 const resendLoadingId = ref('')
+const resendHistoryExpanded = ref(false)
+const resendHistoryLoading = ref(false)
+const resendHistoryLoaded = ref(false)
+const resendHistoryLogs = ref<MessageRecordResendLogVO[]>([])
 const exportLoading = ref(false)
 const recordFilterRef = ref<RecordFilterExpose | null>(null)
 let listRequestSequence = 0
@@ -51,7 +57,6 @@ const statusTextMap: Record<string, string> = {
   SUCCESS: '成功',
   FAILED: '失败',
   PENDING: '待发送',
-  PROCESSING: '处理中',
   ACCEPTED: '已受理',
 }
 
@@ -165,14 +170,73 @@ const loadDetail = async (id: string) => {
   }
 }
 
+const resetResendHistory = () => {
+  resendHistoryExpanded.value = false
+  resendHistoryLoading.value = false
+  resendHistoryLoaded.value = false
+  resendHistoryLogs.value = []
+}
+
+const loadResendHistory = async (id: string, force = false) => {
+  if (resendHistoryLoading.value || (resendHistoryLoaded.value && !force)) {
+    return
+  }
+
+  resendHistoryLoading.value = true
+
+  try {
+    resendHistoryLogs.value = await getRecordResendLogs(id)
+    resendHistoryLoaded.value = true
+  } catch (error) {
+    ElMessage.error(getErrorMessage(error, '手动重发历史加载失败'))
+  } finally {
+    resendHistoryLoading.value = false
+  }
+}
+
 const openDetail = (row: MessageRecordListItem) => {
   detailVisible.value = true
   currentDetail.value = null
+  resetResendHistory()
   loadDetail(row.id)
 }
 
+const toggleResendHistory = (detail: MessageRecordDetail) => {
+  resendHistoryExpanded.value = !resendHistoryExpanded.value
+
+  if (resendHistoryExpanded.value) {
+    loadResendHistory(detail.id)
+  }
+}
+
+const getResendCount = (row: MessageRecordListItem | MessageRecordDetail) => row.resendCount ?? 0
+
+const getMaxResendCount = (row: MessageRecordListItem | MessageRecordDetail) =>
+  row.maxResendCount ?? 0
+
+const getResendTooltip = (row: MessageRecordListItem | MessageRecordDetail) => {
+  const count = getResendCount(row)
+  const max = getMaxResendCount(row)
+
+  if (max > 0 && count >= max) {
+    return `已达到手动重发上限 ${max} 次`
+  }
+
+  if (row.sendStatus !== 'FAILED') {
+    return ''
+  }
+
+  if (row.canResend === true) {
+    return max > 0
+      ? `当前已手动重发 ${count} 次，剩余 ${Math.max(max - count, 0)} 次`
+      : `当前已手动重发 ${count} 次`
+  }
+
+  return '当前记录不允许重发'
+}
+
 const confirmResend = async (row: MessageRecordListItem | MessageRecordDetail) => {
-  if (!row.canResend || resendLoadingId.value) {
+  if (row.sendStatus !== 'FAILED' || row.canResend !== true || resendLoadingId.value) {
     return
   }
 
@@ -207,6 +271,11 @@ const confirmResend = async (row: MessageRecordListItem | MessageRecordDetail) =
   } finally {
     if (detailVisible.value && currentDetail.value?.id === row.id) {
       await loadDetail(row.id)
+
+      if (resendHistoryExpanded.value) {
+        resendHistoryLoaded.value = false
+        await loadResendHistory(row.id, true)
+      }
     }
 
     resendLoadingId.value = ''
@@ -281,7 +350,7 @@ const getStatusType = (status: string) => {
   if (status === 'SUCCESS') return 'success'
   if (status === 'FAILED') return 'danger'
   if (status === 'PENDING') return 'warning'
-  if (status === 'PROCESSING' || status === 'ACCEPTED') return 'primary'
+  if (status === 'ACCEPTED') return 'primary'
   return 'info'
 }
 
@@ -454,27 +523,34 @@ onMounted(() => {
           <template #default="{ row }">
             <div
               class="record-table__actions"
-              :class="{ 'is-resendable': row.canResend }"
+              :class="{ 'is-resendable': row.sendStatus === 'FAILED' }"
             >
               <el-button link type="primary" @click="openDetail(row)">
-                <span v-if="row.canResend" class="record-table__vertical-action">
+                <span v-if="row.sendStatus === 'FAILED'" class="record-table__vertical-action">
                   <span>详</span>
                   <span>情</span>
                 </span>
                 <span v-else>详情</span>
               </el-button>
               <el-button
-                v-if="row.canResend"
+                v-if="row.sendStatus === 'FAILED'"
                 link
                 type="danger"
-                :disabled="Boolean(resendLoadingId)"
+                :disabled="row.canResend !== true || Boolean(resendLoadingId)"
                 :loading="resendLoadingId === row.id"
                 @click="confirmResend(row)"
               >
-                <span class="record-table__vertical-action">
-                  <span>重</span>
-                  <span>发</span>
-                </span>
+                <el-tooltip
+                  :content="getResendTooltip(row)"
+                  placement="top"
+                  :disabled="!getResendTooltip(row)"
+                  popper-class="record-error-tooltip"
+                >
+                  <span class="record-table__vertical-action">
+                    <span>重</span>
+                    <span>发</span>
+                  </span>
+                </el-tooltip>
               </el-button>
             </div>
           </template>
@@ -502,7 +578,12 @@ onMounted(() => {
       :loading="detailLoading"
       :error="detailError"
       :resend-loading="Boolean(currentDetail && resendLoadingId === currentDetail.id)"
+      :resend-tooltip="currentDetail ? getResendTooltip(currentDetail) : ''"
+      :resend-history-expanded="resendHistoryExpanded"
+      :resend-history-loading="resendHistoryLoading"
+      :resend-history-logs="resendHistoryLogs"
       @resend="confirmResend"
+      @toggle-resend-history="toggleResendHistory"
     />
   </section>
 </template>

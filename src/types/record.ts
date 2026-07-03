@@ -59,6 +59,8 @@ export interface MessageRecordListItem {
   createdAt?: string | null
   updatedAt?: string | null
   canResend: boolean
+  resendCount?: number | null
+  maxResendCount?: number | null
 }
 
 export interface SceneParamItem {
@@ -93,6 +95,15 @@ export interface MessageResendResult {
   errorMsg?: string | null
   sendTime?: string | null
   success: boolean
+}
+
+export interface MessageRecordResendLogVO {
+  resendNo?: number | null
+  sendStatusDesc?: string | null
+  errorMsg?: string | null
+  startTime?: string | null
+  endTime?: string | null
+  operatorId?: string | null
 }
 
 export interface MessageRecordPageData {

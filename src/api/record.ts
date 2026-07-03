@@ -6,6 +6,7 @@ import type {
   MessageRecordOverview,
   MessageRecordPageData,
   MessageRecordQuery,
+  MessageRecordResendLogVO,
   MessageResendResult,
 } from '../types/record'
 
@@ -88,6 +89,13 @@ export const getRecordList = async (params: MessageRecordQuery) => {
 
 export const getRecordDetail = async (id: string) => {
   const response = await request.get<ApiResponse<MessageRecordDetail>>(`/api/msg/record/${id}`)
+  return getRequiredData(response)
+}
+
+export const getRecordResendLogs = async (id: string) => {
+  const response = await request.get<ApiResponse<MessageRecordResendLogVO[]>>(
+    `/api/msg/record/${id}/resend-logs`,
+  )
   return getRequiredData(response)
 }
 

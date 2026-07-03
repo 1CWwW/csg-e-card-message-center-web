@@ -250,7 +250,7 @@ onMounted(() => {
           <el-option label="成功" value="SUCCESS" />
           <el-option label="失败" value="FAILED" />
           <el-option label="待发送" value="PENDING" />
-          <el-option label="处理中" value="PROCESSING" />
+          <el-option label="已受理" value="ACCEPTED" />
         </el-select>
       </el-form-item>
       <el-form-item>

@@ -3,7 +3,7 @@ import { computed, ref, watch } from 'vue'
 import { Close } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { getChannelTypeLabel } from '../../../types/channel'
-import type { MessageRecordDetail } from '../../../types/record'
+import type { MessageRecordDetail, MessageRecordResendLogVO } from '../../../types/record'
 
 const props = defineProps<{
   modelValue: boolean
@@ -11,18 +11,22 @@ const props = defineProps<{
   loading: boolean
   error: string
   resendLoading: boolean
+  resendTooltip: string
+  resendHistoryExpanded: boolean
+  resendHistoryLoading: boolean
+  resendHistoryLogs: MessageRecordResendLogVO[]
 }>()
 
 const emit = defineEmits<{
   'update:modelValue': [value: boolean]
   resend: [detail: MessageRecordDetail]
+  toggleResendHistory: [detail: MessageRecordDetail]
 }>()
 
 const statusTextMap: Record<string, string> = {
   SUCCESS: '成功',
   FAILED: '失败',
   PENDING: '待发送',
-  PROCESSING: '处理中',
   ACCEPTED: '已受理',
 }
 
@@ -31,6 +35,40 @@ const detailContent = computed(
   () => props.detail?.fullMessageContent || props.detail?.messageContent || '-',
 )
 const hasErrorStack = computed(() => Boolean(props.detail?.errorStack?.trim()))
+const resendCount = computed(() => props.detail?.resendCount ?? 0)
+const maxResendCount = computed(() => props.detail?.maxResendCount ?? 0)
+const resendSummary = computed(() => {
+  if (!props.detail) {
+    return ''
+  }
+
+  if (maxResendCount.value > 0 && resendCount.value >= maxResendCount.value) {
+    return `已达重发上限 ${resendCount.value}/${maxResendCount.value}`
+  }
+
+  if (resendCount.value > 0) {
+    return maxResendCount.value > 0
+      ? `已重发 ${resendCount.value}/${maxResendCount.value} 次`
+      : `已重发 ${resendCount.value} 次`
+  }
+
+  return '暂无手动重发'
+})
+const shouldShowResendSummary = computed(
+  () => resendCount.value > 0 || Boolean(props.detail?.maxResendCount),
+)
+const sortedResendLogs = computed(() => {
+  return [...props.resendHistoryLogs].sort((left, right) => {
+    const leftNo = left.resendNo ?? 0
+    const rightNo = right.resendNo ?? 0
+
+    if (leftNo !== rightNo) {
+      return rightNo - leftNo
+    }
+
+    return (right.startTime || '').localeCompare(left.startTime || '')
+  })
+})
 
 const getStatusText = (detail: MessageRecordDetail) =>
   statusTextMap[detail.sendStatus] || detail.sendStatusDesc || detail.sendStatus || '-'
@@ -39,11 +77,19 @@ const getStatusType = (status: string) => {
   if (status === 'SUCCESS') return 'success'
   if (status === 'FAILED') return 'danger'
   if (status === 'PENDING') return 'warning'
-  if (status === 'PROCESSING' || status === 'ACCEPTED') return 'primary'
+  if (status === 'ACCEPTED') return 'primary'
   return 'info'
 }
 
 const getPriorityText = (detail: MessageRecordDetail) => detail.priority || 'NORMAL'
+
+const formatEmpty = (value?: string | number | null) => {
+  if (value === undefined || value === null || value === '') {
+    return '--'
+  }
+
+  return String(value)
+}
 
 const copyErrorStack = async () => {
   const stack = props.detail?.errorStack
@@ -191,6 +237,52 @@ watch(
               <strong>{{ detail.sendTime || '-' }}</strong>
             </div>
           </div>
+
+          <div
+            v-if="shouldShowResendSummary"
+            class="record-detail-dialog__resend-summary"
+          >
+            <span>重发情况：</span>
+            <strong>{{ resendSummary }}</strong>
+            <button
+              v-if="resendCount > 0"
+              type="button"
+              @click="emit('toggleResendHistory', detail)"
+            >
+              {{ resendHistoryExpanded ? '收起重发历史' : '查看重发历史 >' }}
+            </button>
+          </div>
+
+          <div
+            v-if="resendHistoryExpanded"
+            v-loading="resendHistoryLoading"
+            class="record-detail-dialog__resend-history"
+          >
+            <el-empty
+              v-if="!resendHistoryLoading && sortedResendLogs.length === 0"
+              description="暂无手动重发记录"
+              :image-size="72"
+            />
+            <el-timeline v-else class="record-detail-dialog__timeline">
+              <el-timeline-item
+                v-for="log in sortedResendLogs"
+                :key="`${log.resendNo || 'unknown'}-${log.startTime || ''}`"
+                :timestamp="formatEmpty(log.startTime)"
+                placement="top"
+              >
+                <div class="record-detail-dialog__resend-log">
+                  <div class="record-detail-dialog__resend-log-title">
+                    <strong>第 {{ formatEmpty(log.resendNo) }} 次重发</strong>
+                    <el-tag size="small" effect="light">{{ formatEmpty(log.sendStatusDesc) }}</el-tag>
+                  </div>
+                  <p><span>开始时间：</span>{{ formatEmpty(log.startTime) }}</p>
+                  <p><span>结束时间：</span>{{ formatEmpty(log.endTime) }}</p>
+                  <p><span>操作人：</span>{{ formatEmpty(log.operatorId) }}</p>
+                  <p><span>失败原因：</span>{{ formatEmpty(log.errorMsg) }}</p>
+                </div>
+              </el-timeline-item>
+            </el-timeline>
+          </div>
         </section>
 
         <div
@@ -226,12 +318,19 @@ watch(
     <template #footer>
       <div class="record-detail-dialog__footer">
         <el-button
-          v-if="detail?.canResend"
+          v-if="detail?.sendStatus === 'FAILED'"
           type="danger"
+          :disabled="detail?.canResend !== true"
           :loading="resendLoading"
           @click="emit('resend', detail)"
         >
-          重新发送
+          <el-tooltip
+            :content="resendTooltip"
+            placement="top"
+            :disabled="!resendTooltip"
+          >
+            <span>重新发送</span>
+          </el-tooltip>
         </el-button>
         <el-button class="record-detail-dialog__footer-close" @click="emit('update:modelValue', false)">
           关闭
@@ -375,6 +474,72 @@ watch(
     line-height: 1.55;
     white-space: pre-wrap;
     word-break: break-word;
+  }
+}
+
+.record-detail-dialog__resend-summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+  color: #7183a0;
+  font-size: 13px;
+  line-height: 1.5;
+
+  strong {
+    color: #24324a;
+    font-weight: 500;
+  }
+
+  button {
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: var(--primary-color, #2563eb);
+    cursor: pointer;
+    font-size: 13px;
+  }
+}
+
+.record-detail-dialog__resend-history {
+  min-height: 72px;
+  margin-top: 12px;
+  padding: 14px 14px 2px;
+  border: 1px solid #dbe3ef;
+  border-radius: 10px;
+  background: #f8fafc;
+}
+
+.record-detail-dialog__timeline {
+  padding-left: 2px;
+}
+
+.record-detail-dialog__resend-log {
+  padding-bottom: 4px;
+  color: #334155;
+  font-size: 13px;
+  line-height: 1.6;
+
+  p {
+    margin: 2px 0 0;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+
+  span {
+    color: #7183a0;
+  }
+}
+
+.record-detail-dialog__resend-log-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+
+  strong {
+    color: #24324a;
+    font-weight: 600;
   }
 }
 
