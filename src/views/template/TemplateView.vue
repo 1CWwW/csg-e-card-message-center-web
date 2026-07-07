@@ -612,6 +612,7 @@ onMounted(() => {
         <el-pagination
           background
           layout="total, sizes, prev, pager, next"
+          :pager-count="5"
           :current-page="currentPage"
           :page-size="currentPageSize"
           :page-sizes="[10, 20, 50, 100]"

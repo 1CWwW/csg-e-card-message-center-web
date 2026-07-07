@@ -83,7 +83,14 @@ export interface TemplateReferenceDetail extends TemplateReferenceItem {
   blocklyJson?: BlocklyJson | string | null
 }
 
-export type TemplatePreviewValue = string | number | string[] | number[]
+export type TemplatePreviewObject = Record<string, string | number | boolean | null>
+
+export type TemplatePreviewValue =
+  | string
+  | number
+  | string[]
+  | number[]
+  | TemplatePreviewObject[]
 
 export interface TemplatePreviewForm {
   templateId: string

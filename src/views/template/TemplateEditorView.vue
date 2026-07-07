@@ -22,8 +22,10 @@ import {
 } from '../../api/template'
 import { getChannelTypeLabel } from '../../types/channel'
 import type {
+  BlocklyWorkspaceState,
   TemplateContentSaveForm,
   TemplateDetail,
+  TemplatePreviewObject,
   TemplatePreviewResult,
   TemplatePreviewValue,
   TemplateReferenceDetail,
@@ -39,9 +41,12 @@ import {
 } from './blockly/blockDefinitions'
 import {
   BLOCKLY_SCHEMA_VERSION,
+  TEMPLATE_BRANCHES_KEY,
   TEMPLATE_ENTRY_BLOCK_ID_KEY,
   TEMPLATE_LINKED_NODE_MODE,
   TEMPLATE_LINKS_KEY,
+  TEMPLATE_LOOPS_KEY,
+  TEMPLATE_MATH_EXPRESSIONS_KEY,
   TEMPLATE_NODE_MODE_KEY,
   TEMPLATE_NODE_ORDER_KEY,
   clearTemplateWorkspaceUndo,
@@ -61,6 +66,24 @@ interface WorkspaceHistoryState {
   undoStack_?: unknown[]
   redoStack_?: unknown[]
 }
+
+interface TemplateBranchState {
+  conditionBlockId?: string
+  thenBlockId?: string
+  elseBlockId?: string
+}
+
+interface TemplateLoopState {
+  collectionBlockId?: string
+  bodyBlockId?: string
+}
+
+interface TemplateMathExpressionState {
+  leftValueBlockId?: string
+  rightValueBlockId?: string
+}
+
+const TEMPLATE_UI_LINKS_KEY = 'templateUiLinks'
 
 const route = useRoute()
 const router = useRouter()
@@ -187,16 +210,111 @@ const resetPreviewValues = (toolbox: TemplateToolboxData) => {
   previewResult.value = null
 }
 
-const getPreviewValue = (paramName: string, paramType: string): TemplatePreviewValue => {
+const isObjectArrayParam = (paramType: string) => paramType === 'OBJECT_ARRAY'
+
+const isWalletItem = (value: unknown): value is TemplatePreviewObject => {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    return false
+  }
+
+  return Object.values(value).every(
+    (item) =>
+      item === null ||
+      typeof item === 'string' ||
+      typeof item === 'number' ||
+      typeof item === 'boolean',
+  )
+}
+
+const parseObjectArrayValue = (paramName: string, value: string): TemplatePreviewObject[] | null => {
+  const trimmedValue = value.trim()
+
+  if (!trimmedValue) {
+    return []
+  }
+
+  let parsedValue: unknown
+  try {
+    parsedValue = JSON.parse(trimmedValue)
+  } catch {
+    ElMessage.warning(`${paramName} 必须输入 JSON 对象数组`)
+    return null
+  }
+
+  if (Array.isArray(parsedValue) && parsedValue.every(isWalletItem)) {
+    return parsedValue
+  }
+
+  ElMessage.warning(`${paramName} 必须是 JSON 对象数组`)
+  return null
+}
+
+const parsePreviewArrayValue = (
+  paramName: string,
+  paramType: string,
+  value: string,
+): TemplatePreviewValue | null => {
+  const trimmedValue = value.trim()
+  const example = paramType === 'STRING_ARRAY' ? '["10001","10002"]' : '[1,2]'
+
+  if (!trimmedValue) {
+    return []
+  }
+
+  let parsedValue: unknown
+  try {
+    parsedValue = JSON.parse(trimmedValue)
+  } catch {
+    ElMessage.warning(`${paramName} 必须输入 JSON 数组，例如 ${example}`)
+    return null
+  }
+
+  if (!Array.isArray(parsedValue)) {
+    ElMessage.warning(`${paramName} 必须输入 JSON 数组，例如 ${example}`)
+    return null
+  }
+
+  if (paramType === 'STRING_ARRAY') {
+    if (parsedValue.every((item): item is string => typeof item === 'string')) {
+      return parsedValue
+    }
+
+    ElMessage.warning(`${paramName} 必须是 JSON 字符串数组，例如 ${example}`)
+    return null
+  }
+
+  if (parsedValue.every((item): item is number => typeof item === 'number' && Number.isFinite(item))) {
+    return parsedValue
+  }
+
+  ElMessage.warning(`${paramName} 必须是 JSON 数值数组，例如 ${example}`)
+  return null
+}
+
+const getPreviewValue = (paramName: string, paramType: string): TemplatePreviewValue | null => {
   const value = previewValues[paramName] ?? ''
+
+  if (isObjectArrayParam(paramType)) {
+    return parseObjectArrayValue(paramName, value)
+  }
+
   if (paramType === 'NUMBER') {
     const numericValue = Number(value)
     return Number.isFinite(numericValue) ? numericValue : 0
   }
+
+  if (paramType === 'STRING_ARRAY' || paramType === 'NUMBER_ARRAY') {
+    return parsePreviewArrayValue(paramName, paramType, value)
+  }
+
   return value
 }
 
 const getPreviewPlaceholder = (paramType: string) => {
+  if (isObjectArrayParam(paramType)) {
+    return '[{"name":"通用账户","paid":10.00,"balance":230.00}]'
+  }
+
   if (paramType === 'NUMBER') {
     return '如：12.50'
   }
@@ -208,13 +326,21 @@ const getPreviewPlaceholder = (paramType: string) => {
   return '如：食堂一楼'
 }
 
+const isRecordValue = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value)
+
 const isTemplateNodeLink = (value: unknown): value is TemplateNodeLink => {
   if (typeof value !== 'object' || value === null) {
     return false
   }
 
   const link = value as Partial<TemplateNodeLink>
-  return typeof link.sourceId === 'string' && typeof link.targetId === 'string'
+  return (
+    typeof link.sourceId === 'string' &&
+    typeof link.targetId === 'string' &&
+    (link.sourcePort === undefined || typeof link.sourcePort === 'string') &&
+    (link.targetPort === undefined || typeof link.targetPort === 'string')
+  )
 }
 
 const readTemplateLinks = (state: unknown): TemplateNodeLink[] => {
@@ -222,21 +348,46 @@ const readTemplateLinks = (state: unknown): TemplateNodeLink[] => {
     return []
   }
 
-  const value = (state as Record<string, unknown>)[TEMPLATE_LINKS_KEY]
+  const record = state as Record<string, unknown>
+  const value = record[TEMPLATE_LINKS_KEY] ?? record[TEMPLATE_UI_LINKS_KEY]
   return Array.isArray(value) ? value.filter(isTemplateNodeLink) : []
 }
+
+const isRenderableEntryBlock = (block: Blockly.Block) =>
+  ![
+    'scene_param_value',
+    'scene_param_ref',
+    'loop_item_value',
+    'loop_item_field',
+    'logic_operation',
+    'logic_compare',
+    'string_contains',
+    'string_like',
+    'math_arithmetic',
+    'math_modulo',
+  ].includes(block.type)
 
 const buildLinkedNodeOrder = (links: TemplateNodeLink[]) => {
   if (!workspace) {
     return []
   }
 
+  const sequenceLinks = links.filter(
+    (link) => (link.sourcePort ?? 'output') === 'output' && (link.targetPort ?? 'input') === 'input',
+  )
   const blockIds = new Set(workspace.getAllBlocks(false).map((block) => block.id))
-  const sourceIds = new Set(links.map((link) => link.sourceId))
-  const targetIds = new Set(links.map((link) => link.targetId))
+  const renderableBlocks = workspace.getAllBlocks(false).filter(isRenderableEntryBlock)
+  const renderableBlockIds = new Set(renderableBlocks.map((block) => block.id))
+  const sourceIds = new Set(sequenceLinks.map((link) => link.sourceId))
+  const targetIds = new Set(sequenceLinks.map((link) => link.targetId))
   const entryBlockId =
-    [...sourceIds].find((sourceId) => !targetIds.has(sourceId) && blockIds.has(sourceId)) ??
-    workspace.getTopBlocks(false).find((block) => blockIds.has(block.id))?.id ??
+    [...sourceIds].find(
+      (sourceId) => !targetIds.has(sourceId) && renderableBlockIds.has(sourceId),
+    ) ??
+    renderableBlocks.find((block) => block.type === 'controls_forEach')?.id ??
+    renderableBlocks.find((block) => block.type === 'controls_if')?.id ??
+    workspace.getTopBlocks(false).find((block) => renderableBlockIds.has(block.id))?.id ??
+    renderableBlocks[0]?.id ??
     ''
 
   if (!entryBlockId) {
@@ -250,27 +401,459 @@ const buildLinkedNodeOrder = (links: TemplateNodeLink[]) => {
   while (currentId && !visited.has(currentId) && blockIds.has(currentId)) {
     order.push(currentId)
     visited.add(currentId)
-    currentId = links.find((link) => link.sourceId === currentId)?.targetId ?? ''
+    currentId = sequenceLinks.find((link) => link.sourceId === currentId)?.targetId ?? ''
   }
 
   return order
 }
+
+const buildTemplateBranches = (links: TemplateNodeLink[]) => {
+  if (!workspace) {
+    return {}
+  }
+
+  const ifBlockIds = new Set(
+    workspace
+      .getAllBlocks(false)
+      .filter((block) => block.type === 'controls_if')
+      .map((block) => block.id),
+  )
+  const branches: Record<string, TemplateBranchState> = {}
+
+  ifBlockIds.forEach((blockId) => {
+    const conditionLink = links.find(
+      (link) => link.targetId === blockId && (link.targetPort ?? 'input') === 'condition',
+    )
+    const thenLink = links.find(
+      (link) => link.sourceId === blockId && (link.sourcePort ?? 'output') === 'then',
+    )
+    const elseLink = links.find(
+      (link) => link.sourceId === blockId && (link.sourcePort ?? 'output') === 'else',
+    )
+
+    branches[blockId] = {
+      conditionBlockId: conditionLink?.sourceId,
+      thenBlockId: thenLink?.targetId,
+      elseBlockId: elseLink?.targetId,
+    }
+  })
+
+  return branches
+}
+
+const findLinkedExpressionTailBlockId = (links: TemplateNodeLink[], entryBlockId?: string) => {
+  if (!workspace || !entryBlockId) {
+    return entryBlockId
+  }
+
+  const blockIds = new Set(workspace.getAllBlocks(false).map((block) => block.id))
+  const sequenceLinks = links.filter(
+    (link) => (link.sourcePort ?? 'output') === 'output' && (link.targetPort ?? 'input') === 'input',
+  )
+  const visited = new Set<string>()
+  let currentId = entryBlockId
+
+  while (currentId && !visited.has(currentId) && blockIds.has(currentId)) {
+    visited.add(currentId)
+    const nextId = sequenceLinks.find((link) => link.sourceId === currentId)?.targetId
+    if (!nextId || visited.has(nextId) || !blockIds.has(nextId)) {
+      break
+    }
+    currentId = nextId
+  }
+
+  return currentId
+}
+
+const buildTemplateLoops = (links: TemplateNodeLink[]) => {
+  if (!workspace) {
+    return {}
+  }
+
+  const loopBlockIds = new Set(
+    workspace
+      .getAllBlocks(false)
+      .filter((block) => block.type === 'controls_forEach')
+      .map((block) => block.id),
+  )
+  const loops: Record<string, TemplateLoopState> = {}
+
+  loopBlockIds.forEach((blockId) => {
+    const collectionLink = links.find(
+      (link) => link.targetId === blockId && (link.targetPort ?? 'input') === 'collection',
+    )
+    const bodyLink = links.find(
+      (link) => link.sourceId === blockId && (link.sourcePort ?? 'output') === 'body',
+    )
+
+    loops[blockId] = {
+      collectionBlockId: collectionLink?.sourceId,
+      bodyBlockId: findLinkedExpressionTailBlockId(links, bodyLink?.targetId),
+    }
+  })
+
+  return loops
+}
+
+const buildTemplateMathExpressions = (links: TemplateNodeLink[]) => {
+  if (!workspace) {
+    return {}
+  }
+
+  const mathBlockIds = new Set(
+    workspace
+      .getAllBlocks(false)
+      .filter((block) => block.type === 'math_arithmetic' || block.type === 'math_modulo')
+      .map((block) => block.id),
+  )
+  const expressions: Record<string, TemplateMathExpressionState> = {}
+
+  mathBlockIds.forEach((blockId) => {
+    const leftLink = links.find(
+      (link) => link.targetId === blockId && (link.targetPort ?? 'input') === 'leftValue',
+    )
+    const rightLink = links.find(
+      (link) => link.targetId === blockId && (link.targetPort ?? 'input') === 'rightValue',
+    )
+
+    expressions[blockId] = {
+      leftValueBlockId: leftLink?.sourceId,
+      rightValueBlockId: rightLink?.sourceId,
+    }
+  })
+
+  return expressions
+}
+
+const getBlockOutputChecks = (block: Blockly.Block) => block.outputConnection?.getCheck() ?? []
+
+const hasBlockOutputCheck = (block: Blockly.Block | undefined, expected: string) =>
+  Boolean(block && getBlockOutputChecks(block).includes(expected))
+
+const buildWorkspaceWithAutoLoopItems = (
+  savedWorkspace: BlocklyWorkspaceState,
+  links: TemplateNodeLink[],
+) => {
+  if (!workspace) {
+    return { workspaceState: savedWorkspace, links }
+  }
+
+  const blocks = workspace.getAllBlocks(false)
+  const blockById = new Map(blocks.map((block) => [block.id, block]))
+  const blocklyBlocksState = savedWorkspace.blocks
+
+  if (!isRecordValue(blocklyBlocksState) || !Array.isArray(blocklyBlocksState.blocks)) {
+    return { workspaceState: savedWorkspace, links }
+  }
+
+  const nextBlocklyBlocks = [...blocklyBlocksState.blocks]
+  const nextLinks = [...links]
+
+  blocks
+    .filter((block) => block.type === 'controls_forEach')
+    .forEach((block) => {
+      const collectionLink = links.find(
+        (link) => link.targetId === block.id && (link.targetPort ?? 'input') === 'collection',
+      )
+      const bodyLink = links.find(
+        (link) => link.sourceId === block.id && (link.sourcePort ?? 'output') === 'body',
+      )
+      const bodyBlock = bodyLink ? blockById.get(bodyLink.targetId) : undefined
+
+      if (!collectionLink || !bodyLink || bodyBlock?.type !== 'text_join') {
+        return
+      }
+
+      const hasBodyValueInput = links.some(
+        (link) =>
+          link.sourcePort !== 'body' &&
+          link.targetId === bodyBlock.id &&
+          (link.targetPort ?? 'input') === 'input',
+      )
+
+      if (hasBodyValueInput) {
+        return
+      }
+
+      const collectionBlock = blockById.get(collectionLink.sourceId)
+      if (hasBlockOutputCheck(collectionBlock, 'ObjectArray')) {
+        return
+      }
+
+      const itemType = hasBlockOutputCheck(collectionBlock, 'NumberArray') ? 'NUMBER' : 'STRING'
+      const itemBlockId = `auto_loop_item_${block.id}`
+      const formatBlockId = `auto_loop_format_${block.id}`
+
+      if (!nextBlocklyBlocks.some((item) => isRecordValue(item) && item.id === itemBlockId)) {
+        nextBlocklyBlocks.push({
+          type: 'loop_item_value',
+          id: itemBlockId,
+          x: bodyBlock.getRelativeToSurfaceXY().x - 180,
+          y: bodyBlock.getRelativeToSurfaceXY().y + 80,
+          extraState: { itemType },
+        })
+      }
+
+      if (itemType === 'NUMBER') {
+        if (!nextBlocklyBlocks.some((item) => isRecordValue(item) && item.id === formatBlockId)) {
+          nextBlocklyBlocks.push({
+            type: 'amount_format',
+            id: formatBlockId,
+            x: bodyBlock.getRelativeToSurfaceXY().x - 90,
+            y: bodyBlock.getRelativeToSurfaceXY().y + 80,
+            fields: { DECIMALS: '0' },
+          })
+        }
+
+        nextLinks.push(
+          {
+            sourceId: itemBlockId,
+            sourcePort: 'output',
+            targetId: formatBlockId,
+            targetPort: 'input',
+          },
+          {
+            sourceId: formatBlockId,
+            sourcePort: 'output',
+            targetId: bodyBlock.id,
+            targetPort: 'input',
+          },
+        )
+        return
+      }
+
+      nextLinks.push({
+        sourceId: itemBlockId,
+        sourcePort: 'output',
+        targetId: bodyBlock.id,
+        targetPort: 'input',
+      })
+    })
+
+  return {
+    workspaceState: {
+      ...savedWorkspace,
+      blocks: {
+        ...blocklyBlocksState,
+        blocks: nextBlocklyBlocks,
+      },
+    },
+    links: nextLinks,
+  }
+}
+
+const validateTemplateBranchLinks = (links: TemplateNodeLink[]) => {
+  if (!workspace) {
+    return []
+  }
+
+  const errors: string[] = []
+  const blocks = workspace.getAllBlocks(false)
+  const blockById = new Map(blocks.map((block) => [block.id, block]))
+  const ifBlocks = blocks.filter((block) => block.type === 'controls_if')
+
+  ifBlocks.forEach((block) => {
+    const conditionLink = links.find(
+      (link) => link.targetId === block.id && (link.targetPort ?? 'input') === 'condition',
+    )
+    const thenLink = links.find(
+      (link) => link.sourceId === block.id && (link.sourcePort ?? 'output') === 'then',
+    )
+    const elseLink = links.find(
+      (link) => link.sourceId === block.id && (link.sourcePort ?? 'output') === 'else',
+    )
+    const conditionBlock = conditionLink ? blockById.get(conditionLink.sourceId) : undefined
+    const thenBlock = thenLink ? blockById.get(thenLink.targetId) : undefined
+    const elseBlock = elseLink ? blockById.get(elseLink.targetId) : undefined
+
+    if (!conditionLink) {
+      errors.push('if / else 条件分支缺少条件，请连接比较或逻辑积木')
+    } else if (!hasBlockOutputCheck(conditionBlock, 'Boolean')) {
+      errors.push('if / else 条件必须连接 Boolean 结果，不能直接连接文本或拼接积木')
+    }
+
+    if (!thenLink) {
+      errors.push('if / else 条件分支缺少正确分支输出')
+    } else if (!hasBlockOutputCheck(thenBlock, 'String')) {
+      errors.push('if / else 正确分支必须连接文本结果积木')
+    }
+
+    if (!elseLink) {
+      errors.push('if / else 条件分支缺少错误分支输出')
+    } else if (!hasBlockOutputCheck(elseBlock, 'String')) {
+      errors.push('if / else 错误分支必须连接文本结果积木')
+    }
+  })
+
+  return [...new Set(errors)]
+}
+
+const validateBinaryExpressionLinks = (links: TemplateNodeLink[]) => {
+  if (!workspace) {
+    return []
+  }
+
+  const errors: string[] = []
+  const blocks = workspace.getAllBlocks(false)
+  const blockById = new Map(blocks.map((block) => [block.id, block]))
+
+  blocks.forEach((block) => {
+    if (block.type === 'logic_operation') {
+      const leftLink = links.find(
+        (link) =>
+          link.targetId === block.id && (link.targetPort ?? 'input') === 'leftCondition',
+      )
+      const rightLink = links.find(
+        (link) =>
+          link.targetId === block.id && (link.targetPort ?? 'input') === 'rightCondition',
+      )
+
+      if (!leftLink || !rightLink) {
+        errors.push('AND / OR 逻辑运算需要连接左条件和右条件')
+        return
+      }
+
+      if (
+        !hasBlockOutputCheck(blockById.get(leftLink.sourceId), 'Boolean') ||
+        !hasBlockOutputCheck(blockById.get(rightLink.sourceId), 'Boolean')
+      ) {
+        errors.push('AND / OR 逻辑运算的左右条件必须都是 Boolean 结果')
+      }
+      return
+    }
+
+    if (block.type === 'math_arithmetic' || block.type === 'math_modulo') {
+      const leftLink = links.find(
+        (link) => link.targetId === block.id && (link.targetPort ?? 'input') === 'leftValue',
+      )
+      const rightLink = links.find(
+        (link) => link.targetId === block.id && (link.targetPort ?? 'input') === 'rightValue',
+      )
+
+      if (!leftLink || !rightLink) {
+        errors.push('数学运算需要连接左值和右值')
+        return
+      }
+
+      if (
+        !hasBlockOutputCheck(blockById.get(leftLink.sourceId), 'Number') ||
+        !hasBlockOutputCheck(blockById.get(rightLink.sourceId), 'Number')
+      ) {
+        errors.push('数学运算的左值和右值必须都是数值结果')
+      }
+      return
+    }
+
+    if (
+      block.type !== 'logic_compare' &&
+      block.type !== 'string_contains' &&
+      block.type !== 'string_like'
+    ) {
+      return
+    }
+
+    const leftLink = links.find(
+      (link) => link.targetId === block.id && (link.targetPort ?? 'input') === 'leftValue',
+    )
+    const rightLink = links.find(
+      (link) => link.targetId === block.id && (link.targetPort ?? 'input') === 'rightValue',
+    )
+
+    if (!leftLink || !rightLink) {
+      errors.push('比较运算需要连接左值和右值')
+    }
+  })
+
+  return [...new Set(errors)]
+}
+
+const validateTemplateLoopLinks = (links: TemplateNodeLink[]) => {
+  if (!workspace) {
+    return []
+  }
+
+  const errors: string[] = []
+  const blocks = workspace.getAllBlocks(false)
+  const blockById = new Map(blocks.map((block) => [block.id, block]))
+
+  blocks
+    .filter((block) => block.type === 'controls_forEach')
+    .forEach((block) => {
+      const collectionLink = links.find(
+        (link) => link.targetId === block.id && (link.targetPort ?? 'input') === 'collection',
+      )
+      const bodyLink = links.find(
+        (link) => link.sourceId === block.id && (link.sourcePort ?? 'output') === 'body',
+      )
+      const collectionBlock = collectionLink
+        ? blockById.get(collectionLink.sourceId)
+        : undefined
+      const bodyBlock = bodyLink ? blockById.get(bodyLink.targetId) : undefined
+      const collectionChecks = collectionBlock ? getBlockOutputChecks(collectionBlock) : []
+
+      if (!collectionLink) {
+        errors.push('for-each 遍历数组缺少数组输入，请连接数组参数')
+      } else if (
+        !collectionChecks.includes('StringArray') &&
+        !collectionChecks.includes('NumberArray') &&
+        !collectionChecks.includes('ObjectArray')
+      ) {
+        errors.push('for-each 的数组输入必须连接数组类型参数')
+      }
+
+      if (!bodyLink) {
+        errors.push('for-each 遍历数组缺少每项输出内容')
+      } else if (!hasBlockOutputCheck(bodyBlock, 'String')) {
+        errors.push('for-each 的内容必须连接文本结果积木')
+      }
+    })
+
+  return [...new Set(errors)]
+}
+
+const validateTemplateLinks = (links: TemplateNodeLink[]) => [
+  ...validateTemplateBranchLinks(links),
+  ...validateBinaryExpressionLinks(links),
+  ...validateTemplateLoopLinks(links),
+]
+
+const isGraphLink = (link: TemplateNodeLink) =>
+  (link.sourcePort ?? 'output') !== 'output' || (link.targetPort ?? 'input') !== 'input'
 
 const saveWorkspaceWithLinks = () => {
   if (!workspace) {
     return {}
   }
 
-  const links = connectionOverlay?.getLinks() ?? []
+  const savedWorkspace = saveTemplateWorkspace(workspace)
+  const rawLinks = connectionOverlay?.getLinks() ?? []
+  const {
+    workspaceState,
+    links,
+  } = buildWorkspaceWithAutoLoopItems(savedWorkspace, rawLinks)
   const nodeOrder = buildLinkedNodeOrder(links)
+  const shouldSaveGraphMetadata = links.some(isGraphLink)
+  const branches = buildTemplateBranches(links)
+  const loops = buildTemplateLoops(links)
+  const mathExpressions = buildTemplateMathExpressions(links)
 
-  return {
-    ...saveTemplateWorkspace(workspace),
+  const nextWorkspace: BlocklyWorkspaceState = {
+    ...workspaceState,
     [TEMPLATE_NODE_MODE_KEY]: TEMPLATE_LINKED_NODE_MODE,
-    [TEMPLATE_LINKS_KEY]: links,
+    [TEMPLATE_UI_LINKS_KEY]: links,
     [TEMPLATE_ENTRY_BLOCK_ID_KEY]: nodeOrder[0] ?? '',
     [TEMPLATE_NODE_ORDER_KEY]: nodeOrder,
   }
+
+  if (shouldSaveGraphMetadata) {
+    nextWorkspace[TEMPLATE_LINKS_KEY] = links
+    nextWorkspace[TEMPLATE_BRANCHES_KEY] = branches
+    nextWorkspace[TEMPLATE_LOOPS_KEY] = loops
+    nextWorkspace[TEMPLATE_MATH_EXPRESSIONS_KEY] = mathExpressions
+    nextWorkspace[TEMPLATE_ENTRY_BLOCK_ID_KEY] = nodeOrder[nodeOrder.length - 1] ?? ''
+  }
+
+  return nextWorkspace
 }
 
 const disposeCurrentWorkspace = () => {
@@ -403,6 +986,15 @@ const saveContent = async () => {
   saveErrors.value = []
 
   try {
+    const links = connectionOverlay?.getLinks() ?? []
+    const branchErrors = validateTemplateLinks(links)
+    if (branchErrors.length > 0) {
+      dirty.value = true
+      saveErrors.value = branchErrors
+      ElMessage.error(branchErrors[0])
+      return
+    }
+
     const form: TemplateContentSaveForm = {
       schemaVersion: BLOCKLY_SCHEMA_VERSION,
       workspace: saveWorkspaceWithLinks(),
@@ -442,12 +1034,22 @@ const runPreview = async () => {
 
   previewing.value = true
   try {
-    const values = Object.fromEntries(
-      toolboxData.value.params.map((param) => [
-        param.paramName,
-        getPreviewValue(param.paramName, param.paramType),
-      ]),
-    )
+    const links = connectionOverlay?.getLinks() ?? []
+    const branchErrors = validateTemplateLinks(links)
+    if (branchErrors.length > 0) {
+      saveErrors.value = branchErrors
+      ElMessage.error(branchErrors[0])
+      return
+    }
+
+    const values: Record<string, TemplatePreviewValue> = {}
+    for (const param of toolboxData.value.params) {
+      const previewValue = getPreviewValue(param.paramName, param.paramType)
+      if (previewValue === null) {
+        return
+      }
+      values[param.paramName] = previewValue
+    }
 
     previewResult.value = await previewTemplate({
       templateId: templateId.value,
@@ -833,7 +1435,10 @@ watch(previewExpanded, async () => {
               <div class="template-editor-page__param-grid">
                 <label v-for="param in toolboxParams" :key="param.paramName">
                   <span>{{ param.paramLabel || param.paramName }} <em>{{ param.paramType }}</em></span>
-                  <el-input v-model="previewValues[param.paramName]" :placeholder="getPreviewPlaceholder(param.paramType)" />
+                  <el-input
+                    v-model="previewValues[param.paramName]"
+                    :placeholder="getPreviewPlaceholder(param.paramType)"
+                  />
                 </label>
               </div>
 
@@ -1449,7 +2054,8 @@ watch(previewExpanded, async () => {
   }
 
   :deep(.controls_forEach.blocklyBlock),
-  :deep(.loop_item_value.blocklyBlock) {
+  :deep(.loop_item_value.blocklyBlock),
+  :deep(.loop_item_field.blocklyBlock) {
     --template-block-colour: #8457e8;
   }
 
@@ -1482,6 +2088,15 @@ watch(previewExpanded, async () => {
   :deep(.template-connection-port.is-text) {
     stroke: #94a3b8;
     stroke-width: 2px;
+  }
+
+  :deep(.template-connection-port-label) {
+    fill: #5f6f86;
+    font-size: 11px;
+    font-weight: 600;
+    pointer-events: none;
+    paint-order: normal;
+    stroke: none;
   }
 
   :deep(.template-connection-port.is-connected) {

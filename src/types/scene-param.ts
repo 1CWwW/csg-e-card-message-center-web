@@ -6,6 +6,7 @@ export const SCENE_PARAM_TYPE_OPTIONS = [
   { value: 'TIME', label: '时间' },
   { value: 'STRING_ARRAY', label: '字符串数组' },
   { value: 'NUMBER_ARRAY', label: '数值数组' },
+  { value: 'OBJECT_ARRAY', label: '对象数组' },
 ] as const
 
 export type SceneParamType = (typeof SCENE_PARAM_TYPE_OPTIONS)[number]['value']

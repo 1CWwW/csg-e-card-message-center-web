@@ -72,6 +72,15 @@ export const buildTemplateToolbox = (
         },
         contents: [block('amount_format'), block('time_format')],
       },
+      {
+        kind: 'category',
+        name: '循环',
+        colour: '#8457e8',
+        cssconfig: {
+          row: 'blocklyToolboxCategory template-toolbox-category template-toolbox-category--loop',
+        },
+        contents: [block('controls_forEach'), block('loop_item_value'), block('loop_item_field')],
+      },
     ],
   }
 }

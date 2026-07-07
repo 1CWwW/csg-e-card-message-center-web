@@ -15,7 +15,8 @@ interface SceneParamBlock extends Blockly.Block {
   sceneParamState: SceneParamExtraState
 }
 
-type LoopItemType = 'STRING' | 'NUMBER'
+type LoopItemType = 'STRING' | 'NUMBER' | 'OBJECT'
+type LoopItemFieldType = 'STRING' | 'NUMBER' | 'TIME'
 
 interface LoopItemExtraState {
   itemType: LoopItemType
@@ -24,6 +25,16 @@ interface LoopItemExtraState {
 interface LoopItemBlock extends Blockly.Block {
   itemType_: LoopItemType
   updateItemType_(): void
+}
+
+interface LoopItemFieldExtraState {
+  fieldName: string
+  fieldType: LoopItemFieldType
+}
+
+interface LoopItemFieldBlock extends Blockly.Block {
+  fieldType_: LoopItemFieldType
+  updateFieldType_(): void
 }
 
 interface OperationExtraState {
@@ -122,8 +133,21 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 
 const readString = (value: unknown) => (typeof value === 'string' ? value : '')
 
-const readLoopItemType = (value: unknown): LoopItemType =>
-  value === 'NUMBER' ? 'NUMBER' : 'STRING'
+const readLoopItemType = (value: unknown): LoopItemType => {
+  if (value === 'NUMBER' || value === 'OBJECT') {
+    return value
+  }
+
+  return 'STRING'
+}
+
+const readLoopItemFieldType = (value: unknown): LoopItemFieldType => {
+  if (value === 'NUMBER' || value === 'TIME') {
+    return value
+  }
+
+  return 'STRING'
+}
 
 const readOperation = (value: unknown, fallback: string) =>
   typeof value === 'string' && value ? value : fallback
@@ -141,7 +165,7 @@ const getSceneParamColour = (paramType: string) => {
     return '#5ba58c'
   }
 
-  if (paramType === 'STRING_ARRAY' || paramType === 'NUMBER_ARRAY') {
+  if (paramType === 'STRING_ARRAY' || paramType === 'NUMBER_ARRAY' || paramType === 'OBJECT_ARRAY') {
     return '#8a5ba5'
   }
 
@@ -157,8 +181,16 @@ const getSceneParamOutputCheck = (paramType: string) => {
     return 'Time'
   }
 
-  if (paramType === 'STRING_ARRAY' || paramType === 'NUMBER_ARRAY') {
-    return paramType === 'STRING_ARRAY' ? 'StringArray' : 'NumberArray'
+  if (paramType === 'STRING_ARRAY' || paramType === 'NUMBER_ARRAY' || paramType === 'OBJECT_ARRAY') {
+    if (paramType === 'NUMBER_ARRAY') {
+      return 'NumberArray'
+    }
+
+    if (paramType === 'OBJECT_ARRAY') {
+      return 'ObjectArray'
+    }
+
+    return 'StringArray'
   }
 
   return 'String'
@@ -289,6 +321,8 @@ export const registerTemplateBlocks = () => {
       this.appendDummyInput()
         .appendField('逻辑')
         .appendField(new Blockly.FieldLabelSerializable(this.operationLabel_), 'OP_LABEL')
+      this.appendDummyInput().appendField('左条件').appendField('连接 Boolean 条件')
+      this.appendDummyInput().appendField('右条件').appendField('连接 Boolean 条件')
       this.setOutput(true, 'Boolean')
       this.setStyle('logic_expression_blocks')
       this.setTooltip('按左右连线中的相邻条件执行逻辑运算')
@@ -315,9 +349,12 @@ export const registerTemplateBlocks = () => {
   Blockly.Blocks.controls_if = {
     init() {
       this.appendDummyInput().appendField('if / else 条件分支')
+      this.appendDummyInput().appendField('条件').appendField('连接 Boolean 条件')
+      this.appendDummyInput().appendField('正确').appendField('条件成立时输出')
+      this.appendDummyInput().appendField('错误').appendField('条件不成立时输出')
       this.setOutput(true, 'String')
       this.setStyle('logic_expression_blocks')
-      this.setTooltip('按连线关系处理条件分支')
+      this.setTooltip('连接条件、正确分支和错误分支，按条件结果选择输出内容')
     },
   }
 
@@ -328,6 +365,8 @@ export const registerTemplateBlocks = () => {
       this.appendDummyInput()
         .appendField('比较')
         .appendField(new Blockly.FieldLabelSerializable(this.operationLabel_), 'OP_LABEL')
+      this.appendDummyInput().appendField('左值').appendField('连接参数或文本')
+      this.appendDummyInput().appendField('右值').appendField('连接参数或文本')
       this.setOutput(true, 'Boolean')
       this.setStyle('compare_expression_blocks')
       this.setTooltip('按连线中的相邻值执行比较')
@@ -353,6 +392,8 @@ export const registerTemplateBlocks = () => {
   Blockly.Blocks.string_contains = {
     init() {
       this.appendDummyInput().appendField('包含 (in)')
+      this.appendDummyInput().appendField('文本').appendField('连接待判断文本')
+      this.appendDummyInput().appendField('关键词').appendField('连接关键词')
       this.setOutput(true, 'Boolean')
       this.setStyle('compare_expression_blocks')
       this.setTooltip('按连线中的相邻字符串判断包含关系')
@@ -362,6 +403,8 @@ export const registerTemplateBlocks = () => {
   Blockly.Blocks.string_like = {
     init() {
       this.appendDummyInput().appendField('匹配 (like)')
+      this.appendDummyInput().appendField('文本').appendField('连接待匹配文本')
+      this.appendDummyInput().appendField('模式').appendField('连接匹配模式')
       this.setOutput(true, 'Boolean')
       this.setStyle('compare_expression_blocks')
       this.setTooltip('按连线中的相邻字符串执行模式匹配')
@@ -371,9 +414,11 @@ export const registerTemplateBlocks = () => {
   Blockly.Blocks.controls_forEach = {
     init() {
       this.appendDummyInput().appendField('for-each 遍历数组')
+      this.appendDummyInput().appendField('数组').appendField('连接数组参数')
+      this.appendDummyInput().appendField('内容').appendField('每项输出内容')
       this.setOutput(true, 'String')
       this.setStyle('loop_expression_blocks')
-      this.setTooltip('按连线关系遍历数组并输出内容')
+      this.setTooltip('连接数组参数和每项输出内容，按数组逐项渲染')
     },
   }
 
@@ -402,6 +447,53 @@ export const registerTemplateBlocks = () => {
     },
   }
 
+  Blockly.Blocks.loop_item_field = {
+    init(this: LoopItemFieldBlock) {
+      this.fieldType_ = 'STRING'
+      this.appendDummyInput()
+        .appendField('循环项字段')
+        .appendField(new TemplateTextInput('', undefined, '字段名'), 'FIELD_NAME')
+        .appendField(new Blockly.FieldDropdown([
+          ['文本', 'STRING'],
+          ['数值', 'NUMBER'],
+          ['时间', 'TIME'],
+        ]), 'FIELD_TYPE')
+      this.setOutput(true, 'String')
+      this.setStyle('loop_expression_blocks')
+      this.setTooltip('读取当前对象循环项中的指定字段，例如 name、paid、balance')
+      this.setOnChange(() => {
+        const fieldType = readLoopItemFieldType(this.getFieldValue('FIELD_TYPE'))
+        if (fieldType !== this.fieldType_) {
+          this.fieldType_ = fieldType
+          this.updateFieldType_()
+        }
+      })
+      this.updateFieldType_()
+    },
+    updateFieldType_(this: LoopItemFieldBlock) {
+      const outputCheck = this.fieldType_ === 'NUMBER'
+        ? 'Number'
+        : this.fieldType_ === 'TIME'
+          ? 'Time'
+          : 'String'
+      this.outputConnection?.setCheck(outputCheck)
+    },
+    saveExtraState(this: LoopItemFieldBlock): LoopItemFieldExtraState {
+      return {
+        fieldName: this.getFieldValue('FIELD_NAME') || '',
+        fieldType: readLoopItemFieldType(this.getFieldValue('FIELD_TYPE')),
+      }
+    },
+    loadExtraState(this: LoopItemFieldBlock, state: unknown) {
+      const fieldName = isRecord(state) ? readString(state.fieldName) : ''
+      const fieldType = isRecord(state) ? readLoopItemFieldType(state.fieldType) : 'STRING'
+      this.fieldType_ = fieldType
+      this.setFieldValue(fieldName, 'FIELD_NAME')
+      this.setFieldValue(fieldType, 'FIELD_TYPE')
+      this.updateFieldType_()
+    },
+  }
+
   Blockly.Blocks.math_arithmetic = {
     init(this: OperationBlock) {
       this.operation_ = 'ADD'
@@ -409,9 +501,11 @@ export const registerTemplateBlocks = () => {
       this.appendDummyInput()
         .appendField('运算')
         .appendField(new Blockly.FieldLabelSerializable(this.operationLabel_), 'OP_LABEL')
+      this.appendDummyInput().appendField('左值').appendField('连接数值')
+      this.appendDummyInput().appendField('右值').appendField('连接数值')
       this.setOutput(true, 'Number')
       this.setStyle('math_expression_blocks')
-      this.setTooltip('按连线中的相邻数值执行数学运算')
+      this.setTooltip('连接左值和右值后执行数学运算')
     },
     saveExtraState(this: OperationBlock): OperationExtraState {
       return { operation: this.operation_ }
@@ -432,9 +526,11 @@ export const registerTemplateBlocks = () => {
   Blockly.Blocks.math_modulo = {
     init() {
       this.appendDummyInput().appendField('取余 %')
+      this.appendDummyInput().appendField('左值').appendField('连接数值')
+      this.appendDummyInput().appendField('右值').appendField('连接数值')
       this.setOutput(true, 'Number')
       this.setStyle('math_expression_blocks')
-      this.setTooltip('按连线中的相邻数值计算余数')
+      this.setTooltip('连接左值和右值后计算余数')
     },
   }
 

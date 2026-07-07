@@ -11,10 +11,14 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 
 export const BLOCKLY_SCHEMA_VERSION = 1 as const
 export const TEMPLATE_LINKS_KEY = 'templateLinks'
+export const TEMPLATE_BRANCHES_KEY = 'templateBranches'
+export const TEMPLATE_LOOPS_KEY = 'templateLoops'
+export const TEMPLATE_MATH_EXPRESSIONS_KEY = 'templateMathExpressions'
 export const TEMPLATE_NODE_MODE_KEY = 'templateNodeMode'
 export const TEMPLATE_ENTRY_BLOCK_ID_KEY = 'templateEntryBlockId'
 export const TEMPLATE_NODE_ORDER_KEY = 'templateNodeOrder'
 export const TEMPLATE_LINKED_NODE_MODE = 'LINKED_NODES'
+export const TEMPLATE_UI_LINKS_KEY = 'templateUiLinks'
 
 const templateEditorTheme = Blockly.Theme.defineTheme('templateEditorTheme', {
   name: 'templateEditorTheme',
@@ -263,6 +267,10 @@ export const loadTemplateWorkspace = (
     workspace.clear()
     const {
       [TEMPLATE_LINKS_KEY]: _templateLinks,
+      [TEMPLATE_BRANCHES_KEY]: _templateBranches,
+      [TEMPLATE_LOOPS_KEY]: _templateLoops,
+      [TEMPLATE_MATH_EXPRESSIONS_KEY]: _templateMathExpressions,
+      [TEMPLATE_UI_LINKS_KEY]: _templateUiLinks,
       [TEMPLATE_NODE_MODE_KEY]: _templateNodeMode,
       [TEMPLATE_ENTRY_BLOCK_ID_KEY]: _templateEntryBlockId,
       [TEMPLATE_NODE_ORDER_KEY]: _templateNodeOrder,

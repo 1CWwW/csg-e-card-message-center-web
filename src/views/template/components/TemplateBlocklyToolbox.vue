@@ -42,7 +42,11 @@ const getParamStyle = (param: TemplateToolboxParam) => {
     return { colour: '#5ba58c', tagClass: 'is-string' }
   }
 
-  if (param.paramType === 'STRING_ARRAY' || param.paramType === 'NUMBER_ARRAY') {
+  if (
+    param.paramType === 'STRING_ARRAY' ||
+    param.paramType === 'NUMBER_ARRAY' ||
+    param.paramType === 'OBJECT_ARRAY'
+  ) {
     return { colour: '#8457e8', tagClass: 'is-loop' }
   }
 
@@ -213,6 +217,17 @@ const groups = computed<ToolboxGroup[]>(() => [
         state: {
           type: 'controls_forEach',
           extraState: { operation: 'FOR_EACH' },
+        },
+      },
+      {
+        key: 'loop_item_field',
+        label: '循环项字段',
+        tag: '字段',
+        colour: '#8457e8',
+        tagClass: 'is-loop',
+        state: {
+          type: 'loop_item_field',
+          fields: { FIELD_TYPE: 'STRING' },
         },
       },
     ],

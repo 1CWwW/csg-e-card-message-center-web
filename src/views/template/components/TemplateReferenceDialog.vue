@@ -287,6 +287,7 @@ onBeforeUnmount(() => {
         v-model:current-page="query.pageNum"
         v-model:page-size="query.pageSize"
         layout="total, sizes, prev, pager, next"
+        :pager-count="5"
         :page-sizes="[10, 20, 50]"
         :total="total"
         @size-change="resetAndLoad"

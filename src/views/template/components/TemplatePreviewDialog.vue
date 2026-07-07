@@ -8,6 +8,7 @@ import type {
   TemplatePreviewResult,
   TemplatePreviewValue,
   TemplateToolboxParam,
+  TemplatePreviewObject,
 } from '../../../types/template'
 
 type PreviewInputValue =
@@ -42,7 +43,52 @@ const sortedParams = computed(() =>
   ),
 )
 
-const createInitialValue = (paramType: string): PreviewInputValue => {
+const isObjectArrayParam = (paramType: string) => paramType === 'OBJECT_ARRAY'
+
+const isWalletItem = (value: unknown): value is TemplatePreviewObject => {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    return false
+  }
+
+  return Object.values(value).every(
+    (item) =>
+      item === null ||
+      typeof item === 'string' ||
+      typeof item === 'number' ||
+      typeof item === 'boolean',
+  )
+}
+
+const parseObjectArrayValue = (paramName: string, value: string): TemplatePreviewObject[] | null => {
+  const trimmedValue = value.trim()
+
+  if (!trimmedValue) {
+    return []
+  }
+
+  let parsedValue: unknown
+  try {
+    parsedValue = JSON.parse(trimmedValue)
+  } catch {
+    ElMessage.warning(`${paramName} 必须输入 JSON 对象数组`)
+    return null
+  }
+
+  if (Array.isArray(parsedValue) && parsedValue.every(isWalletItem)) {
+    return parsedValue
+  }
+
+  ElMessage.warning(`${paramName} 必须是 JSON 对象数组`)
+  return null
+}
+
+const createInitialValue = (param: TemplateToolboxParam): PreviewInputValue => {
+  if (isObjectArrayParam(param.paramType)) {
+    return '[{"name":"通用账户","paid":10.00,"balance":230.00}]'
+  }
+
+  const { paramType } = param
+
   if (paramType === 'NUMBER') {
     return null
   }
@@ -61,7 +107,7 @@ const createInitialValue = (paramType: string): PreviewInputValue => {
 const resetValues = () => {
   Object.keys(values).forEach((key) => delete values[key])
   sortedParams.value.forEach((param) => {
-    values[param.paramName] = createInitialValue(param.paramType)
+    values[param.paramName] = createInitialValue(param)
   })
   result.value = null
   previewError.value = ''
@@ -91,6 +137,20 @@ const buildPreviewValues = () => {
     }
 
     if (isEmptyValue(value)) {
+      continue
+    }
+
+    if (isObjectArrayParam(param.paramType)) {
+      if (typeof value !== 'string') {
+        continue
+      }
+
+      const walletValue = parseObjectArrayValue(param.paramName, value)
+      if (walletValue === null) {
+        return null
+      }
+
+      requestValues[param.paramName] = walletValue
       continue
     }
 
@@ -261,7 +321,14 @@ onBeforeUnmount(() => {
             :label="param.paramLabel || param.paramName"
           >
             <el-input
-              v-if="param.paramType === 'STRING'"
+              v-if="isObjectArrayParam(param.paramType)"
+              v-model="values[param.paramName] as string"
+              type="textarea"
+              :rows="3"
+              clearable
+            />
+            <el-input
+              v-else-if="param.paramType === 'STRING'"
               v-model="values[param.paramName] as string"
               clearable
             />
