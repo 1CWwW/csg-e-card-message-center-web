@@ -1,13 +1,6 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed } from 'vue'
 import { Message, Search, Timer } from '@element-plus/icons-vue'
-import {
-  getMessagePriorityLabel,
-  messagePriorityOptions,
-  type MessagePriority,
-} from '../../types/push'
-
-const priority = ref<MessagePriority>('NORMAL')
 
 const requestFields = [
   {
@@ -103,64 +96,12 @@ const processSteps = [
 ]
 
 const requestExample = computed(() =>
-  JSON.stringify(
-    {
-      sceneCode: 'CANTEEN_DEDUCTION',
-      sceneParams: {
-        amount: 12.5,
-        merchantName: '食堂一楼',
-        consumeTime: '2026-05-27 12:15:00',
-        balance: 987.5,
-      },
-      userId: 'U123456',
-      userOrgId: 'ORG_GZPSB',
-      userPhone: '138****8000',
-      priority: priority.value ?? 'NORMAL',
-      bizId: 'ORDER_20260527_001',
-    },
-    null,
-    2,
-  ),
+  '{ "sceneCode": "CANTEEN_DEDUCTION", "sceneParams": { "amount": 12.50, "merchantName": "食堂一楼", "consumeTime": "2026-05-27 12:15:00", "balance": 987.50 }, "userId": "U123456", "userOrgId": "ORG_GZPSB", "userPhone": "138****8000", "priority": "NORMAL", "bizId": "ORDER_20260527_001" }',
 )
 
 const syncResponseExample = computed(() =>
-  JSON.stringify(
-    {
-      code: 200,
-      message: '推送完成',
-      data: {
-        msgId: 'MSG_20260527_00001',
-        status: 'SUCCESS',
-        priority: priority.value,
-        priorityDesc: getMessagePriorityLabel(priority.value),
-        channelResults: [{ channelType: 'SMS', status: 'SUCCESS' }],
-      },
-    },
-    null,
-    2,
-  ),
+  '{ "code": 200, "message": "推送完成", "data": { "msgId": "MSG_20260527_00001", "status": "SUCCESS", "channelResults": [ { "channelType": "SMS", "status": "SUCCESS", ... } ] } }',
 )
-
-const asyncResponseExample = computed(() =>
-  JSON.stringify(
-    {
-      code: 200,
-      message: '请求已受理',
-      data: {
-        msgId: 'MSG_20260527_00002',
-        status: 'ACCEPTED',
-        priority: priority.value,
-        priorityDesc: getMessagePriorityLabel(priority.value),
-      },
-    },
-    null,
-    2,
-  ),
-)
-
-const resetPriority = () => {
-  priority.value = 'NORMAL'
-}
 </script>
 
 <template>
@@ -246,32 +187,13 @@ const resetPriority = () => {
 
     <el-card class="page-card document-card example-card" shadow="never">
       <template #header><h2>请求 / 响应示例</h2></template>
-      <div class="priority-control">
-        <div>
-          <strong>消息优先级</strong>
-          <p>消息优先级用于异步消息排队，不等同于渠道优先级。</p>
-        </div>
-        <el-select v-model="priority" class="priority-control__select">
-          <el-option
-            v-for="item in messagePriorityOptions"
-            :key="item.value"
-            :label="item.label"
-            :value="item.value"
-          />
-        </el-select>
-        <el-button @click="resetPriority">重置</el-button>
-      </div>
       <div class="example-block">
         <h3>POST /api/message-center/push/sync — 请求体：</h3>
         <pre><code>{{ requestExample }}</code></pre>
       </div>
       <div class="example-block">
-        <h3>同步响应体：</h3>
+        <h3>响应体：</h3>
         <pre><code>{{ syncResponseExample }}</code></pre>
-      </div>
-      <div class="example-block">
-        <h3>异步 ACCEPTED 响应体：</h3>
-        <pre><code>{{ asyncResponseExample }}</code></pre>
       </div>
     </el-card>
 
@@ -525,35 +447,6 @@ const resetPriority = () => {
     white-space: pre-wrap;
     word-break: break-word;
   }
-}
-
-.priority-control {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 18px;
-  padding: 14px 16px;
-  border: 1px solid #dbeafe;
-  border-radius: 10px;
-  background: #f8fafc;
-
-  > div {
-    flex: 1;
-  }
-
-  strong {
-    color: var(--app-text-primary);
-  }
-
-  p {
-    margin-top: 3px;
-    color: var(--app-text-secondary);
-    font-size: 12px;
-  }
-}
-
-.priority-control__select {
-  width: 130px;
 }
 
 .error-code {
