@@ -202,6 +202,13 @@ const getBlockPorts = (block: Blockly.BlockSvg): TemplateNodePort[] => {
         direction: 'source',
         label: '内容',
       },
+      {
+        block,
+        side: 'right',
+        key: 'output',
+        direction: 'source',
+        label: '后续',
+      },
     ]
   }
 
@@ -262,7 +269,11 @@ const getPortRatio = (port: Pick<TemplateNodePort, 'block' | 'key'>) => {
     }
 
     if (port.key === 'body') {
-      return 0.78
+      return 0.68
+    }
+
+    if (port.key === 'output') {
+      return 0.84
     }
   }
 

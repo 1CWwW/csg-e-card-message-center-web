@@ -876,26 +876,6 @@ const rewriteLoopCollectionPrefixLinks = (links: TemplateNodeLink[]) => {
 const isGraphLink = (link: TemplateNodeLink) =>
   (link.sourcePort ?? 'output') !== 'output' || (link.targetPort ?? 'input') !== 'input'
 
-const hasLoopPrefixInputLink = (links: TemplateNodeLink[]) => {
-  if (!workspace) {
-    return false
-  }
-
-  const loopBlockIds = new Set(
-    workspace
-      .getAllBlocks(false)
-      .filter((block) => block.type === 'controls_forEach')
-      .map((block) => block.id),
-  )
-
-  return links.some(
-    (link) =>
-      loopBlockIds.has(link.targetId) &&
-      (link.sourcePort ?? 'output') === 'output' &&
-      (link.targetPort ?? 'input') === 'input',
-  )
-}
-
 const saveWorkspaceWithLinks = () => {
   if (!workspace) {
     return {}
@@ -927,9 +907,7 @@ const saveWorkspaceWithLinks = () => {
     nextWorkspace[TEMPLATE_BRANCHES_KEY] = branches
     nextWorkspace[TEMPLATE_LOOPS_KEY] = loops
     nextWorkspace[TEMPLATE_MATH_EXPRESSIONS_KEY] = mathExpressions
-    nextWorkspace[TEMPLATE_ENTRY_BLOCK_ID_KEY] = hasLoopPrefixInputLink(links)
-      ? nodeOrder[0] ?? ''
-      : nodeOrder[nodeOrder.length - 1] ?? ''
+    nextWorkspace[TEMPLATE_ENTRY_BLOCK_ID_KEY] = nodeOrder[nodeOrder.length - 1] ?? ''
   }
 
   return nextWorkspace
