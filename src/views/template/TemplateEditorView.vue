@@ -817,8 +817,84 @@ const validateTemplateLinks = (links: TemplateNodeLink[]) => [
   ...validateTemplateLoopLinks(links),
 ]
 
+const rewriteLoopCollectionPrefixLinks = (links: TemplateNodeLink[]) => {
+  if (!workspace) {
+    return links
+  }
+
+  const blocks = workspace.getAllBlocks(false)
+  const blockById = new Map(blocks.map((block) => [block.id, block]))
+  const loopBlocks = blocks.filter((block) => block.type === 'controls_forEach')
+  let nextLinks = [...links]
+
+  loopBlocks.forEach((loopBlock) => {
+    const collectionLink = nextLinks.find(
+      (link) => link.targetId === loopBlock.id && (link.targetPort ?? 'input') === 'collection',
+    )
+    const collectionBlock = collectionLink ? blockById.get(collectionLink.sourceId) : undefined
+
+    if (!collectionBlock || !getBlockOutputChecks(collectionBlock).some((check) => check.endsWith('Array'))) {
+      return
+    }
+
+    const prefixLink = nextLinks.find(
+      (link) =>
+        link.targetId === collectionBlock.id &&
+        (link.sourcePort ?? 'output') === 'output' &&
+        (link.targetPort ?? 'input') === 'input',
+    )
+
+    if (!prefixLink) {
+      return
+    }
+
+    nextLinks = nextLinks.filter((link) => link !== prefixLink)
+
+    const loopPrefixLink: TemplateNodeLink = {
+      sourceId: prefixLink.sourceId,
+      sourcePort: 'output',
+      targetId: loopBlock.id,
+      targetPort: 'input',
+    }
+
+    if (
+      !nextLinks.some(
+        (link) =>
+          link.sourceId === loopPrefixLink.sourceId &&
+          (link.sourcePort ?? 'output') === loopPrefixLink.sourcePort &&
+          link.targetId === loopPrefixLink.targetId &&
+          (link.targetPort ?? 'input') === loopPrefixLink.targetPort,
+      )
+    ) {
+      nextLinks.push(loopPrefixLink)
+    }
+  })
+
+  return nextLinks
+}
+
 const isGraphLink = (link: TemplateNodeLink) =>
   (link.sourcePort ?? 'output') !== 'output' || (link.targetPort ?? 'input') !== 'input'
+
+const hasLoopPrefixInputLink = (links: TemplateNodeLink[]) => {
+  if (!workspace) {
+    return false
+  }
+
+  const loopBlockIds = new Set(
+    workspace
+      .getAllBlocks(false)
+      .filter((block) => block.type === 'controls_forEach')
+      .map((block) => block.id),
+  )
+
+  return links.some(
+    (link) =>
+      loopBlockIds.has(link.targetId) &&
+      (link.sourcePort ?? 'output') === 'output' &&
+      (link.targetPort ?? 'input') === 'input',
+  )
+}
 
 const saveWorkspaceWithLinks = () => {
   if (!workspace) {
@@ -829,8 +905,9 @@ const saveWorkspaceWithLinks = () => {
   const rawLinks = connectionOverlay?.getLinks() ?? []
   const {
     workspaceState,
-    links,
+    links: autoLinks,
   } = buildWorkspaceWithAutoLoopItems(savedWorkspace, rawLinks)
+  const links = rewriteLoopCollectionPrefixLinks(autoLinks)
   const nodeOrder = buildLinkedNodeOrder(links)
   const shouldSaveGraphMetadata = links.some(isGraphLink)
   const branches = buildTemplateBranches(links)
@@ -850,7 +927,9 @@ const saveWorkspaceWithLinks = () => {
     nextWorkspace[TEMPLATE_BRANCHES_KEY] = branches
     nextWorkspace[TEMPLATE_LOOPS_KEY] = loops
     nextWorkspace[TEMPLATE_MATH_EXPRESSIONS_KEY] = mathExpressions
-    nextWorkspace[TEMPLATE_ENTRY_BLOCK_ID_KEY] = nodeOrder[nodeOrder.length - 1] ?? ''
+    nextWorkspace[TEMPLATE_ENTRY_BLOCK_ID_KEY] = hasLoopPrefixInputLink(links)
+      ? nodeOrder[0] ?? ''
+      : nodeOrder[nodeOrder.length - 1] ?? ''
   }
 
   return nextWorkspace
@@ -2069,6 +2148,11 @@ watch(previewExpanded, async () => {
     stroke-width: 1.6px;
     stroke-opacity: 0.78;
     vector-effect: non-scaling-stroke;
+  }
+
+  :deep(.template-connection-arrow) {
+    fill: #a8b3c2;
+    fill-opacity: 0.9;
   }
 
   :deep(.template-connection-port) {

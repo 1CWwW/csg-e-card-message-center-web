@@ -184,6 +184,13 @@ const getBlockPorts = (block: Blockly.BlockSvg): TemplateNodePort[] => {
       {
         block,
         side: 'left',
+        key: 'input',
+        direction: 'target',
+        label: '前置',
+      },
+      {
+        block,
+        side: 'left',
         key: 'collection',
         direction: 'target',
         label: '数组',
@@ -244,6 +251,10 @@ const getPortRatio = (port: Pick<TemplateNodePort, 'block' | 'key'>) => {
 
     if (port.key === 'rightCondition' || port.key === 'rightValue') {
       return 0.78
+    }
+
+    if (port.key === 'input') {
+      return 0.36
     }
 
     if (port.key === 'collection') {
@@ -367,6 +378,22 @@ export class TemplateConnectionOverlay {
     this.lineLayer.replaceChildren()
     this.portLayer.replaceChildren()
 
+    const defs = createSvgElement('defs', 'template-connection-defs')
+    const marker = createSvgElement('marker', 'template-connection-arrow-marker')
+    const arrow = createSvgElement('path', 'template-connection-arrow')
+    marker.setAttribute('id', 'template-connection-arrow')
+    marker.setAttribute('viewBox', '0 0 10 8')
+    marker.setAttribute('refX', '9')
+    marker.setAttribute('refY', '4')
+    marker.setAttribute('markerWidth', '8')
+    marker.setAttribute('markerHeight', '8')
+    marker.setAttribute('orient', 'auto')
+    marker.setAttribute('markerUnits', 'strokeWidth')
+    arrow.setAttribute('d', 'M 0 0 L 10 4 L 0 8 z')
+    marker.appendChild(arrow)
+    defs.appendChild(marker)
+    this.lineLayer.appendChild(defs)
+
     const blocks = this.workspace.getAllBlocks(false) as Blockly.BlockSvg[]
     const blockById = new Map(blocks.map((block) => [block.id, block]))
 
@@ -404,6 +431,7 @@ export class TemplateConnectionOverlay {
         'd',
         `M ${sourcePoint.x} ${sourcePoint.y} C ${sourcePoint.x + controlOffset * direction} ${sourcePoint.y}, ${targetPoint.x - controlOffset * direction} ${targetPoint.y}, ${targetPoint.x} ${targetPoint.y}`,
       )
+      path.setAttribute('marker-end', 'url(#template-connection-arrow)')
       this.lineLayer.appendChild(path)
     })
   }
