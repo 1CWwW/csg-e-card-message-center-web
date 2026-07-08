@@ -15,7 +15,7 @@ import {
 } from '../../api/statistics'
 import { getTemplateList } from '../../api/template'
 import UnitTreeSelect from '../../components/business/UnitTreeSelect.vue'
-import { getUnitTree } from '../../services/unit-tree-service'
+import { getUnitTree, getUnitTreeUnavailableMessage } from '../../services/unit-tree-service'
 import {
   CHANNEL_TYPE_OPTIONS,
   getChannelTypeLabel,
@@ -535,6 +535,7 @@ async function loadUnitTreeOptions() {
     unitTree.value = await getUnitTree()
   } catch {
     unitTree.value = []
+    ElMessage.error(getUnitTreeUnavailableMessage())
   } finally {
     unitTreeLoading.value = false
   }

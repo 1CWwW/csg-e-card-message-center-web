@@ -127,10 +127,10 @@ const loadUnitTree = async () => {
     const tree = await getUnitTree()
     unitTree.value = tree
     isMockUnitTree.value = isMockUnitTreeEnabled()
-
-    if (!isMockUnitTree.value && tree.length === 0) {
-      ElMessage.warning(getUnitTreeUnavailableMessage())
-    }
+  } catch {
+    unitTree.value = []
+    isMockUnitTree.value = false
+    ElMessage.error(getUnitTreeUnavailableMessage())
   } finally {
     unitTreeLoading.value = false
   }

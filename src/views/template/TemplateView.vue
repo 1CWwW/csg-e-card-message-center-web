@@ -16,7 +16,6 @@ import { getSceneList } from '../../api/scene'
 import {
   getUnitTree,
   getUnitTreeUnavailableMessage,
-  isMockUnitTreeEnabled,
 } from '../../services/unit-tree-service'
 import type {
   TemplateCopyForm,
@@ -216,10 +215,9 @@ const loadUnitTree = async () => {
 
   try {
     unitTree.value = await getUnitTree()
-
-    if (!isMockUnitTreeEnabled() && unitTree.value.length === 0) {
-      ElMessage.warning(getUnitTreeUnavailableMessage())
-    }
+  } catch {
+    unitTree.value = []
+    ElMessage.error(getUnitTreeUnavailableMessage())
   } finally {
     unitTreeLoading.value = false
   }

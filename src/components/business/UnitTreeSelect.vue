@@ -29,8 +29,8 @@ const emit = defineEmits<{
 }>()
 
 const treeProps = {
-  value: 'unitId',
-  label: 'unitName',
+  value: 'orgId',
+  label: 'orgName',
   children: 'children',
 }
 
@@ -60,7 +60,7 @@ const selectedValue = computed({
     class="unit-tree-select"
     :data="data"
     :props="treeProps"
-    node-key="unitId"
+    node-key="orgId"
     check-strictly
     filterable
     clearable
