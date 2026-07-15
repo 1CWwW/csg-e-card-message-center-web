@@ -2,7 +2,7 @@ import axios, { AxiosError, type AxiosInstance, type AxiosResponse } from 'axios
 import { ElMessage } from 'element-plus'
 import type { ApiErrorPayload, ApiResponse } from '../types/api'
 
-const defaultDevBaseUrl = '/message-center'
+const defaultDevBaseUrl = '/xxzx-api'
 
 const service: AxiosInstance = axios.create({
   baseURL: import.meta.env.VITE_API_BASE_URL || (import.meta.env.DEV ? defaultDevBaseUrl : ''),

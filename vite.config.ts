@@ -6,7 +6,7 @@ export default defineConfig({
   plugins: [vue()],
   server: {
     proxy: {
-      '/message-center': {
+      '/xxzx-api': {
         target: 'http://localhost:8080',
         changeOrigin: true,
       },
