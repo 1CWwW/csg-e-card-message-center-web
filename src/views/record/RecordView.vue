@@ -12,6 +12,7 @@ import {
 } from '../../api/record'
 import { getChannelTypeLabel } from '../../types/channel'
 import { getMessagePriorityLabel } from '../../types/push'
+import { resolveUnitNodes } from '../../services/unit-tree-service'
 import ChannelTypeIcon from '../channel/components/ChannelTypeIcon.vue'
 import type {
   MessageRecordDetail,
@@ -78,6 +79,32 @@ const fetchOverview = async () => {
   }
 }
 
+const enrichRecordOrganizations = async (rows: MessageRecordListItem[]) => {
+  const missingOrgIds = Array.from(
+    new Set(
+      rows
+        .filter((row) => !row.userOrgName && row.userOrgId)
+        .map((row) => row.userOrgId as string),
+    ),
+  )
+
+  if (!missingOrgIds.length) {
+    return rows
+  }
+
+  try {
+    const resolvedUnits = await resolveUnitNodes(missingOrgIds)
+    const unitNameMap = new Map(resolvedUnits.map((unit) => [unit.unitId, unit.unitName]))
+
+    return rows.map((row) => ({
+      ...row,
+      userOrgName: row.userOrgName || (row.userOrgId ? unitNameMap.get(row.userOrgId) : null),
+    }))
+  } catch {
+    return rows
+  }
+}
+
 const fetchRecordList = async () => {
   const requestSequence = ++listRequestSequence
   listLoading.value = true
@@ -90,7 +117,13 @@ const fetchRecordList = async () => {
       return
     }
 
-    recordList.value = pageData.list || []
+    const enrichedList = await enrichRecordOrganizations(pageData.list || [])
+
+    if (requestSequence !== listRequestSequence) {
+      return
+    }
+
+    recordList.value = enrichedList
     total.value = pageData.total ?? 0
 
     const maxPage = Math.max(1, Math.ceil(total.value / query.pageSize))
@@ -365,7 +398,15 @@ const getPriorityTagType = (priority?: string | null) => {
 }
 
 const getReceiverOrgText = (row: MessageRecordListItem) =>
-  row.userOrgName || row.userOrgId || '-'
+  row.userOrgName || '-'
+
+const getReceiverText = (row: MessageRecordListItem) => {
+  if (row.userName && row.userId) {
+    return `${row.userName}(${row.userId})`
+  }
+
+  return row.userName || row.userId || '-'
+}
 
 onMounted(() => {
   Promise.allSettled([fetchOverview(), fetchRecordList()])
@@ -470,11 +511,7 @@ onMounted(() => {
         </el-table-column>
         <el-table-column label="接收人" width="125" show-overflow-tooltip>
           <template #default="{ row }">
-            <span v-if="row.userName" class="record-table__receiver">
-              <span>{{ row.userName }}</span>
-              <small v-if="row.userId">（{{ row.userId }}）</small>
-            </span>
-            <span v-else class="record-table__receiver-id">{{ row.userId || '-' }}</span>
+            <span class="record-table__primary-text">{{ getReceiverText(row) }}</span>
           </template>
         </el-table-column>
         <el-table-column label="接收单位" width="125" show-overflow-tooltip>
@@ -657,20 +694,6 @@ onMounted(() => {
 
 .record-table__primary-text {
   color: var(--app-text-primary);
-}
-
-.record-table__receiver {
-  color: var(--app-text-primary);
-  white-space: nowrap;
-
-  small {
-    color: #8ba2c8;
-    font-size: inherit;
-  }
-}
-
-.record-table__receiver-id {
-  color: #8ba2c8;
 }
 
 .record-table__priority-tag,
