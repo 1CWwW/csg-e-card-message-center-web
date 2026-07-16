@@ -10,7 +10,16 @@ lerna-debug.log*
 node_modules
 dist
 dist-ssr
+/dist.tar.gz
+.vite
+coverage
+*.tsbuildinfo
 *.local
+
+# Local AI assistant files
+.codex/
+.agents/
+.codex-*
 
 # Editor directories and files
 .vscode/*

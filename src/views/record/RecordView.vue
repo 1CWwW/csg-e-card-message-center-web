@@ -79,7 +79,7 @@ const fetchOverview = async () => {
   }
 }
 
-const enrichRecordOrganizations = async (rows: MessageRecordListItem[]) => {
+const enrichRecordOrganizations = async <T extends MessageRecordListItem>(rows: T[]) => {
   const missingOrgIds = Array.from(
     new Set(
       rows
@@ -194,7 +194,9 @@ const loadDetail = async (id: string) => {
   detailError.value = ''
 
   try {
-    currentDetail.value = await getRecordDetail(id)
+    const detail = await getRecordDetail(id)
+    const [enrichedDetail] = await enrichRecordOrganizations([detail])
+    currentDetail.value = enrichedDetail || null
   } catch (error) {
     currentDetail.value = null
     detailError.value = getErrorMessage(error, '消息记录详情加载失败')

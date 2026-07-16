@@ -34,6 +34,8 @@ const errorStackExpanded = ref(false)
 const detailContent = computed(
   () => props.detail?.fullMessageContent || props.detail?.messageContent || '-',
 )
+const receiverName = computed(() => props.detail?.userName || '-')
+const receiverOrgName = computed(() => props.detail?.userOrgName || '-')
 const hasErrorStack = computed(() => Boolean(props.detail?.errorStack?.trim()))
 const resendCount = computed(() => props.detail?.resendCount ?? 0)
 const maxResendCount = computed(() => props.detail?.maxResendCount ?? 0)
@@ -206,11 +208,11 @@ watch(
             </div>
             <div class="record-detail-dialog__item">
               <span>姓名：</span>
-              <strong>{{ detail.userName || '-' }}</strong>
+              <strong>{{ receiverName }}</strong>
             </div>
             <div class="record-detail-dialog__item is-full">
               <span>单位：</span>
-              <strong>{{ detail.userOrgName || detail.userOrgId || '-' }}</strong>
+              <strong>{{ receiverOrgName }}</strong>
             </div>
           </div>
         </section>
