@@ -12,6 +12,7 @@ export interface UnitTreeNode {
   parentUnitId: string | null
   sortOrder: number | null
   children: UnitTreeNode[]
+  hasChildren?: boolean
 }
 
 export interface OrganizationTreeNode {
@@ -23,4 +24,9 @@ export interface OrganizationTreeNode {
   orgLevel: number | null
   state: number | null
   children?: OrganizationTreeNode[] | null
+  hasChildren?: boolean
+}
+
+export interface OrganizationResolvedNode extends OrganizationTreeNode {
+  ancestors?: OrganizationTreeNode[] | null
 }

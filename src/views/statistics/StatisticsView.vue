@@ -15,7 +15,11 @@ import {
 } from '../../api/statistics'
 import { getTemplateList } from '../../api/template'
 import UnitTreeSelect from '../../components/business/UnitTreeSelect.vue'
-import { getUnitTree, getUnitTreeUnavailableMessage } from '../../services/unit-tree-service'
+import {
+  getUnitTree,
+  getUnitTreeUnavailableMessage,
+  resolveUnitNodes,
+} from '../../services/unit-tree-service'
 import {
   CHANNEL_TYPE_OPTIONS,
   getChannelTypeLabel,
@@ -261,8 +265,12 @@ function collectAllUnitIds(node: UnitTreeNode, result: Set<string>) {
   node.children?.forEach((child) => collectAllUnitIds(child, result))
 }
 
-function getSelectedUnitIds() {
+async function getSelectedUnitIds() {
   const result = new Set<string>()
+
+  if (filters.includeSubUnits && filters.unitIds.length > 0 && unitTree.value.length === 0) {
+    await loadUnitTreeOptions()
+  }
 
   filters.unitIds.forEach((unitId) => {
     if (!unitId) {
@@ -281,7 +289,7 @@ function getSelectedUnitIds() {
   return Array.from(result)
 }
 
-function buildCurrentTabQuery(): StatisticsQuery {
+async function buildCurrentTabQuery(): Promise<StatisticsQuery> {
   const baseQuery = buildBaseQuery()
 
   if (activeTab.value === 'TIME') {
@@ -308,7 +316,7 @@ function buildCurrentTabQuery(): StatisticsQuery {
   }
 
   if (activeTab.value === 'UNIT') {
-    const unitIds = getSelectedUnitIds()
+    const unitIds = await getSelectedUnitIds()
     return {
       ...baseQuery,
       unitIds: unitIds.length > 0 ? unitIds : undefined,
@@ -366,7 +374,7 @@ async function loadActiveTab() {
   state.error = ''
 
   try {
-    const query = buildCurrentTabQuery()
+    const query = await buildCurrentTabQuery()
 
     if (activeTab.value === 'TIME') {
       tabStates.TIME.data = await getTimeStatistics(query)
@@ -375,7 +383,7 @@ async function loadActiveTab() {
     } else if (activeTab.value === 'SCENE') {
       tabStates.SCENE.data = await getSceneStatistics(query)
     } else if (activeTab.value === 'UNIT') {
-      tabStates.UNIT.data = await getUnitStatistics(query)
+      tabStates.UNIT.data = await enrichUnitStatistics(await getUnitStatistics(query))
     } else {
       tabStates.TEMPLATE.data = await getTemplateStatistics(query)
     }
@@ -416,8 +424,8 @@ async function handleRefresh() {
   await loadCurrentData()
 }
 
-function getExportQuery(scope: StatisticsExportScope) {
-  const baseQuery = scope === 'CURRENT' ? buildCurrentTabQuery() : {}
+async function getExportQuery(scope: StatisticsExportScope) {
+  const baseQuery = scope === 'CURRENT' ? await buildCurrentTabQuery() : {}
 
   return {
     ...baseQuery,
@@ -451,7 +459,7 @@ async function handleExport(scope: StatisticsExportScope) {
   exporting.value = true
 
   try {
-    const response = await exportStatistics(getExportQuery(scope))
+    const response = await exportStatistics(await getExportQuery(scope))
     const blob = response.data
     const downloadUrl = URL.createObjectURL(blob)
     const link = document.createElement('a')
@@ -529,6 +537,10 @@ async function loadAllTemplateOptions() {
 }
 
 async function loadUnitTreeOptions() {
+  if (unitTreeLoading.value || unitTree.value.length > 0) {
+    return
+  }
+
   unitTreeLoading.value = true
 
   try {
@@ -543,7 +555,6 @@ async function loadUnitTreeOptions() {
 
 async function loadFilterOptions() {
   optionLoading.value = true
-  loadUnitTreeOptions()
 
   try {
     const [sceneResult, templateResult] = await Promise.allSettled([
@@ -573,6 +584,29 @@ function getUnitDisplayName(row: UnitStatisticsItem) {
   }
 
   return row.unitName
+}
+
+async function enrichUnitStatistics(rows: UnitStatisticsItem[]) {
+  const missingUnitIds = Array.from(
+    new Set(
+      rows
+        .filter((row) => (!row.unitName || row.unitName === '-') && row.unitId)
+        .map((row) => row.unitId),
+    ),
+  )
+
+  if (!missingUnitIds.length) {
+    return rows
+  }
+
+  const resolvedUnits = await resolveUnitNodes(missingUnitIds)
+  const unitNameMap = new Map(resolvedUnits.map((unit) => [unit.unitId, unit.unitName]))
+
+  return rows.map((row) => ({
+    ...row,
+    unitName:
+      row.unitName && row.unitName !== '-' ? row.unitName : unitNameMap.get(row.unitId) ?? null,
+  }))
 }
 
 function getUnitChartName(row: UnitStatisticsItem) {

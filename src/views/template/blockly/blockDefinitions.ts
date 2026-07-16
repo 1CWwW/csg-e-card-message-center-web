@@ -118,6 +118,46 @@ class TemplateTextInput extends Blockly.FieldTextInput {
   }
 }
 
+class TemplateMultilineTextInput extends TemplateTextInput {
+  protected override getDisplayText_() {
+    const value = this.getValue() ?? ''
+    return value ? value.replace(/\r\n?|\n/g, '【换行】') : super.getDisplayText_()
+  }
+
+  protected override widgetCreate_() {
+    const input = super.widgetCreate_()
+    const textarea = document.createElement('textarea')
+    const value = this.getValue() ?? ''
+
+    textarea.className = input.className
+    textarea.classList.add('template-block-textarea')
+    textarea.value = value
+    textarea.defaultValue = value
+    textarea.style.cssText = input.style.cssText
+    textarea.setAttribute('spellcheck', input.getAttribute('spellcheck') ?? 'false')
+    textarea.setAttribute('data-untyped-default-value', value)
+
+    this.unbindInputEvents_()
+    input.replaceWith(textarea)
+    this.bindInputEvents_(textarea)
+
+    ;['pointerdown', 'mousedown', 'click', 'keydown'].forEach((eventName) => {
+      textarea.addEventListener(eventName, (event) => event.stopPropagation())
+    })
+
+    return textarea
+  }
+
+  protected override onHtmlInputKeyDown_(event: KeyboardEvent) {
+    if (event.key === 'Enter' && !event.ctrlKey && !event.metaKey) {
+      event.stopPropagation()
+      return
+    }
+
+    super.onHtmlInputKeyDown_(event)
+  }
+}
+
 const decimalValidator = (value: string) => {
   const normalized = value.trim()
   if (!/^\d$/.test(normalized)) {
@@ -224,7 +264,7 @@ export const registerTemplateBlocks = () => {
     init() {
       this.appendDummyInput()
         .appendField('常量')
-        .appendField(new TemplateTextInput('', undefined, '输入文本...'), 'TEXT')
+        .appendField(new TemplateMultilineTextInput('', undefined, '输入文本...'), 'TEXT')
       this.setOutput(true, 'String')
       this.setStyle('text_blocks')
       this.setTooltip('输入需要拼接到消息正文中的文本')
@@ -235,7 +275,7 @@ export const registerTemplateBlocks = () => {
     init() {
       this.appendDummyInput()
         .appendField('拼接')
-        .appendField(new TemplateTextInput('', undefined, '输入文本...'), 'TEXT')
+        .appendField(new TemplateMultilineTextInput('', undefined, '输入文本...'), 'TEXT')
       this.appendValueInput('VALUE').setCheck(['String', 'Number', 'Time'])
       this.setOutput(true, 'String')
       this.setInputsInline(true)

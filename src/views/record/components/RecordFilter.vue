@@ -5,7 +5,6 @@ import { getChannelList } from '../../../api/channel'
 import { getSceneList } from '../../../api/scene'
 import { getTemplateList } from '../../../api/template'
 import UnitTreeSelect from '../../../components/business/UnitTreeSelect.vue'
-import { getUnitTree, getUnitTreeUnavailableMessage } from '../../../services/unit-tree-service'
 import {
   CHANNEL_TYPE_OPTIONS,
   type ChannelItem,
@@ -20,7 +19,6 @@ import type { MessageRecordQuery } from '../../../types/record'
 import type { SceneItem } from '../../../types/scene'
 import type { TemplateListItem } from '../../../types/template'
 import type { UnitTreeNode } from '../../../types/unit'
-import { ElMessage } from 'element-plus'
 
 interface RecordFilterModel {
   msgId: string
@@ -157,22 +155,8 @@ const loadOptions = async () => {
   }
 }
 
-const loadUnitTree = async () => {
-  unitTreeLoading.value = true
-
-  try {
-    unitTree.value = await getUnitTree()
-  } catch {
-    unitTree.value = []
-    ElMessage.error(getUnitTreeUnavailableMessage())
-  } finally {
-    unitTreeLoading.value = false
-  }
-}
-
 onMounted(() => {
   loadOptions()
-  loadUnitTree()
 })
 </script>
 

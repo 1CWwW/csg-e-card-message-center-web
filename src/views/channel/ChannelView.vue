@@ -18,9 +18,8 @@ import type {
 } from '../../types/channel'
 import type { UnitTreeNode } from '../../types/unit'
 import {
-  getUnitTree,
-  getUnitTreeUnavailableMessage,
   isMockUnitTreeEnabled,
+  resolveUnitNodes,
 } from '../../services/unit-tree-service'
 import { CHANNEL_TYPE_OPTIONS } from '../../types/channel'
 import ChannelFormDialog from './components/ChannelFormDialog.vue'
@@ -118,22 +117,6 @@ const fetchOverview = async () => {
 
 const refreshChannelPage = async () => {
   await Promise.all([fetchChannelList(), fetchOverview()])
-}
-
-const loadUnitTree = async () => {
-  unitTreeLoading.value = true
-
-  try {
-    const tree = await getUnitTree()
-    unitTree.value = tree
-    isMockUnitTree.value = isMockUnitTreeEnabled()
-  } catch {
-    unitTree.value = []
-    isMockUnitTree.value = false
-    ElMessage.error(getUnitTreeUnavailableMessage())
-  } finally {
-    unitTreeLoading.value = false
-  }
 }
 
 const handleSearch = (searchPayload: ChannelSearchPayload) => {
@@ -283,6 +266,8 @@ const openUnitDetailDialog = async (row: ChannelItem) => {
 
   try {
     unitDetailChannel.value = await getChannelDetail(row.id)
+    unitTree.value = await resolveUnitNodes(unitDetailChannel.value.unitIds ?? [])
+    isMockUnitTree.value = isMockUnitTreeEnabled()
   } catch {
     unitDetailVisible.value = false
   } finally {
@@ -291,7 +276,6 @@ const openUnitDetailDialog = async (row: ChannelItem) => {
 }
 
 onMounted(() => {
-  loadUnitTree()
   refreshChannelPage()
 })
 </script>

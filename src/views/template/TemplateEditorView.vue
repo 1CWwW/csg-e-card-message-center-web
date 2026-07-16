@@ -1869,6 +1869,8 @@ watch(previewExpanded, async () => {
     margin: 0;
     font-size: 13px;
     line-height: 1.7;
+    overflow-wrap: anywhere;
+    white-space: pre-wrap;
   }
 }
 
@@ -2190,6 +2192,16 @@ watch(previewExpanded, async () => {
   background: #ffffff !important;
   outline: none;
   font: 500 13px/1.5 "Microsoft YaHei", "PingFang SC", sans-serif;
+}
+
+:global(.blocklyWidgetDiv .template-block-textarea) {
+  width: 260px !important;
+  min-height: 96px;
+  padding: 8px 10px;
+  border: 1px solid #94a3b8;
+  border-radius: 6px;
+  resize: both;
+  white-space: pre-wrap;
 }
 
 :global(.blocklyBlockDragSurface),

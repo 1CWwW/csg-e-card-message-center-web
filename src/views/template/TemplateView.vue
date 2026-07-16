@@ -13,10 +13,7 @@ import {
   updateTemplate,
 } from '../../api/template'
 import { getSceneList } from '../../api/scene'
-import {
-  getUnitTree,
-  getUnitTreeUnavailableMessage,
-} from '../../services/unit-tree-service'
+import { resolveUnitNodes } from '../../services/unit-tree-service'
 import type {
   TemplateCopyForm,
   TemplateCreateForm,
@@ -207,19 +204,6 @@ const loadSceneOptions = async () => {
     sceneOptions.value = []
   } finally {
     sceneLoading.value = false
-  }
-}
-
-const loadUnitTree = async () => {
-  unitTreeLoading.value = true
-
-  try {
-    unitTree.value = await getUnitTree()
-  } catch {
-    unitTree.value = []
-    ElMessage.error(getUnitTreeUnavailableMessage())
-  } finally {
-    unitTreeLoading.value = false
   }
 }
 
@@ -426,7 +410,7 @@ const handleToggle = async (row: TemplateListItem) => {
   const confirmMessage =
     row.status === 1
       ? `确认停用模板“${row.templateName || '-'}”吗？`
-      : `确认启用模板“${row.templateName || '-'}”吗？启用校验将由后端执行。`
+      : `确认启用模板“${row.templateName || '-'}”吗？`
 
   try {
     await ElMessageBox.confirm(confirmMessage, `${actionText}确认`, {
@@ -497,6 +481,7 @@ const openUnitDialog = async (row: TemplateListItem) => {
 
   try {
     unitDetailTemplate.value = await getTemplateDetail(row.id)
+    unitTree.value = await resolveUnitNodes(unitDetailTemplate.value.unitIds ?? [])
   } catch {
     unitDialogVisible.value = false
   } finally {
@@ -531,7 +516,6 @@ onMounted(() => {
 
   refreshTemplatePage()
   loadSceneOptions()
-  loadUnitTree()
 })
 </script>
 

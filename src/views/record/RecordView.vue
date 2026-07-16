@@ -558,7 +558,7 @@ onMounted(() => {
       </el-table>
 
       <div class="record-table-card__footer">
-        <span>用户和单位名称将在员工中心接入后补充</span>
+        <span></span>
         <el-pagination
           background
           layout="total, sizes, prev, pager, next"
