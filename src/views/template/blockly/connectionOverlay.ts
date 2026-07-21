@@ -72,6 +72,13 @@ const getBlockPorts = (block: Blockly.BlockSvg): TemplateNodePort[] => {
       {
         block,
         side: 'left',
+        key: 'input',
+        direction: 'target',
+        label: '前置',
+      },
+      {
+        block,
+        side: 'left',
         key: 'condition',
         direction: 'target',
         label: '条件',
@@ -89,6 +96,31 @@ const getBlockPorts = (block: Blockly.BlockSvg): TemplateNodePort[] => {
         key: 'else',
         direction: 'source',
         label: '错误',
+      },
+      {
+        block,
+        side: 'right',
+        key: 'output',
+        direction: 'source',
+        label: '后续',
+      },
+    ]
+  }
+
+  if (block.type === 'logic_negate') {
+    return [
+      {
+        block,
+        side: 'left',
+        key: 'condition',
+        direction: 'target',
+        label: '条件',
+      },
+      {
+        block,
+        side: 'right',
+        key: 'output',
+        direction: 'source',
       },
     ]
   }
@@ -230,6 +262,10 @@ const getBlockPorts = (block: Blockly.BlockSvg): TemplateNodePort[] => {
 
 const getPortRatio = (port: Pick<TemplateNodePort, 'block' | 'key'>) => {
   if (port.block.type === 'controls_if') {
+    if (port.key === 'input') {
+      return 0.18
+    }
+
     if (port.key === 'condition') {
       return 0.38
     }
@@ -240,6 +276,10 @@ const getPortRatio = (port: Pick<TemplateNodePort, 'block' | 'key'>) => {
 
     if (port.key === 'else') {
       return 0.78
+    }
+
+    if (port.key === 'output') {
+      return 0.92
     }
   }
 

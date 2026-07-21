@@ -1,12 +1,14 @@
 <script setup lang="ts">
 import * as Blockly from 'blockly'
-import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, shallowRef, watch } from 'vue'
 import { onBeforeRouteLeave, useRoute, useRouter } from 'vue-router'
 import {
   Aim,
   ArrowLeft,
+  CopyDocument,
   Delete,
   Document,
+  DocumentCopy,
   RefreshLeft,
   RefreshRight,
   VideoPlay,
@@ -83,6 +85,34 @@ interface TemplateMathExpressionState {
   rightValueBlockId?: string
 }
 
+interface TemplateClipboardBlock {
+  sourceId: string
+  state: Blockly.serialization.blocks.State
+}
+
+interface TemplateBlockClipboard {
+  blocks: TemplateClipboardBlock[]
+  links: TemplateNodeLink[]
+  pasteCount: number
+}
+
+interface SelectionDragState {
+  pointerId: number
+  startX: number
+  startY: number
+}
+
+interface CanvasPointerPosition {
+  clientX: number
+  clientY: number
+}
+
+interface GroupDragState {
+  blockId: string
+  startX: number
+  startY: number
+}
+
 const TEMPLATE_UI_LINKS_KEY = 'templateUiLinks'
 
 const route = useRoute()
@@ -101,12 +131,14 @@ const hasWorkspaceBlocks = ref(false)
 const canUndo = ref(false)
 const canRedo = ref(false)
 const workspaceScale = ref(100)
+const selectedBlockIds = ref<Set<string>>(new Set())
+const blockClipboard = shallowRef<TemplateBlockClipboard | null>(null)
 const referenceDialogVisible = ref(false)
 const previewPanelVisible = ref(false)
 const previewExpanded = ref(false)
 const previewing = ref(false)
 const previewResult = ref<TemplatePreviewResult | null>(null)
-const previewValues = reactive<Record<string, string>>({})
+const previewValues = reactive<Record<string, string | boolean>>({})
 
 let workspace: Blockly.WorkspaceSvg | null = null
 let connectionOverlay: TemplateConnectionOverlay | null = null
@@ -116,6 +148,10 @@ let leaveConfirmPromise: Promise<boolean> | null = null
 let originalBodyOverflow = ''
 let disposed = false
 let skipNextLeaveConfirm = false
+let selectionDragState: SelectionDragState | null = null
+let selectionBoxElement: HTMLDivElement | null = null
+let lastCanvasPointer: CanvasPointerPosition | null = null
+let groupDragState: GroupDragState | null = null
 
 const templateId = computed(() => {
   const value = route.params.templateId
@@ -135,6 +171,8 @@ const sceneText = computed(
 )
 const canZoomOut = computed(() => workspaceScale.value > 50)
 const canZoomIn = computed(() => workspaceScale.value < 200)
+const selectedBlockCount = computed(() => selectedBlockIds.value.size)
+const canPasteBlocks = computed(() => Boolean(blockClipboard.value?.blocks.length))
 
 const readErrorMessage = (error: unknown, fallback: string) => {
   if (error instanceof Error && error.message) {
@@ -156,6 +194,181 @@ const isEditableTarget = (target: EventTarget | null) => {
       'input, textarea, select, [contenteditable="true"], .el-input, .el-input-number, .blocklyHtmlInput, .blocklyWidgetDiv, .blocklyDropDownDiv',
     ),
   )
+}
+
+const findWorkspaceBlockFromTarget = (target: EventTarget | null) => {
+  if (!workspace || !(target instanceof Element)) {
+    return null
+  }
+
+  const blockRoot = target.closest<SVGGElement>('.blocklyDraggable')
+  if (!blockRoot) {
+    return null
+  }
+
+  return (
+    (workspace
+      .getAllBlocks(false)
+      .find((block) => (block as Blockly.BlockSvg).getSvgRoot() === blockRoot) as
+      | Blockly.BlockSvg
+      | undefined) ?? null
+  )
+}
+
+const renderBlockSelection = () => {
+  if (!workspace) {
+    selectedBlockIds.value = new Set()
+    return
+  }
+
+  const availableIds = new Set(workspace.getAllBlocks(false).map((block) => block.id))
+  const nextIds = new Set(
+    [...selectedBlockIds.value].filter((blockId) => availableIds.has(blockId)),
+  )
+  selectedBlockIds.value = nextIds
+
+  workspace.getAllBlocks(false).forEach((block) => {
+    const blockRoot = (block as Blockly.BlockSvg).getSvgRoot()
+    blockRoot?.classList.toggle('template-multi-selected', nextIds.has(block.id))
+  })
+}
+
+const setSelectedBlockIds = (blockIds: Iterable<string>) => {
+  selectedBlockIds.value = new Set(blockIds)
+  renderBlockSelection()
+}
+
+const removeSelectionBox = () => {
+  selectionBoxElement?.remove()
+  selectionBoxElement = null
+}
+
+const finishSelectionDrag = (event: PointerEvent) => {
+  if (!selectionDragState || event.pointerId !== selectionDragState.pointerId || !workspace) {
+    return
+  }
+
+  const left = Math.min(selectionDragState.startX, event.clientX)
+  const right = Math.max(selectionDragState.startX, event.clientX)
+  const top = Math.min(selectionDragState.startY, event.clientY)
+  const bottom = Math.max(selectionDragState.startY, event.clientY)
+  const selectedIds = workspace
+    .getAllBlocks(false)
+    .filter((block) => {
+      const rect = (block as Blockly.BlockSvg).getSvgRoot()?.getBoundingClientRect()
+      if (!rect) {
+        return false
+      }
+
+      const centerX = rect.left + rect.width / 2
+      const centerY = rect.top + rect.height / 2
+      return centerX >= left && centerX <= right && centerY >= top && centerY <= bottom
+    })
+    .map((block) => block.id)
+
+  setSelectedBlockIds(selectedIds)
+  selectionDragState = null
+  removeSelectionBox()
+  window.removeEventListener('pointermove', handleSelectionPointerMove, true)
+  window.removeEventListener('pointerup', finishSelectionDrag, true)
+}
+
+const handleSelectionPointerMove = (event: PointerEvent) => {
+  if (
+    !selectionDragState ||
+    event.pointerId !== selectionDragState.pointerId ||
+    !selectionBoxElement ||
+    !workspaceContainer.value
+  ) {
+    return
+  }
+
+  event.preventDefault()
+  const containerRect = workspaceContainer.value.getBoundingClientRect()
+  const left = Math.min(selectionDragState.startX, event.clientX) - containerRect.left
+  const top = Math.min(selectionDragState.startY, event.clientY) - containerRect.top
+  selectionBoxElement.style.left = `${left}px`
+  selectionBoxElement.style.top = `${top}px`
+  selectionBoxElement.style.width = `${Math.abs(event.clientX - selectionDragState.startX)}px`
+  selectionBoxElement.style.height = `${Math.abs(event.clientY - selectionDragState.startY)}px`
+}
+
+const handleCanvasPointerMove = (event: PointerEvent) => {
+  if (
+    lastCanvasPointer?.clientX !== event.clientX ||
+    lastCanvasPointer?.clientY !== event.clientY
+  ) {
+    if (blockClipboard.value) {
+      blockClipboard.value.pasteCount = 0
+    }
+    lastCanvasPointer = { clientX: event.clientX, clientY: event.clientY }
+  }
+}
+
+const handleSelectionPointerDown = (event: PointerEvent) => {
+  if (!workspace || !workspaceContainer.value || event.button !== 0) {
+    return
+  }
+
+  handleCanvasPointerMove(event)
+
+  const block = findWorkspaceBlockFromTarget(event.target)
+  if (block) {
+    if (event.ctrlKey || event.metaKey || event.shiftKey) {
+      event.preventDefault()
+      event.stopPropagation()
+      const nextIds = new Set(selectedBlockIds.value)
+      if (nextIds.has(block.id)) {
+        nextIds.delete(block.id)
+      } else {
+        nextIds.add(block.id)
+      }
+      setSelectedBlockIds(nextIds)
+      return
+    }
+
+    if (selectedBlockIds.value.size <= 1 || !selectedBlockIds.value.has(block.id)) {
+      setSelectedBlockIds([block.id])
+    }
+    return
+  }
+
+  if (!event.shiftKey) {
+    setSelectedBlockIds([])
+    return
+  }
+
+  event.preventDefault()
+  event.stopPropagation()
+  selectionDragState = {
+    pointerId: event.pointerId,
+    startX: event.clientX,
+    startY: event.clientY,
+  }
+  removeSelectionBox()
+  selectionBoxElement = document.createElement('div')
+  selectionBoxElement.className = 'template-editor-page__selection-box'
+  workspaceContainer.value.append(selectionBoxElement)
+  handleSelectionPointerMove(event)
+  window.addEventListener('pointermove', handleSelectionPointerMove, true)
+  window.addEventListener('pointerup', finishSelectionDrag, true)
+}
+
+const attachWorkspaceSelection = () => {
+  workspaceContainer.value?.addEventListener('pointerdown', handleSelectionPointerDown, true)
+  workspaceContainer.value?.addEventListener('pointermove', handleCanvasPointerMove, true)
+}
+
+const detachWorkspaceSelection = () => {
+  workspaceContainer.value?.removeEventListener('pointerdown', handleSelectionPointerDown, true)
+  workspaceContainer.value?.removeEventListener('pointermove', handleCanvasPointerMove, true)
+  window.removeEventListener('pointermove', handleSelectionPointerMove, true)
+  window.removeEventListener('pointerup', finishSelectionDrag, true)
+  selectionDragState = null
+  removeSelectionBox()
+  selectedBlockIds.value = new Set()
+  lastCanvasPointer = null
+  groupDragState = null
 }
 
 const updateToolbarState = () => {
@@ -180,6 +393,7 @@ const refreshWorkspaceState = () => {
   workspaceScale.value = Math.round(workspace.getScale() * 100)
   hasWorkspaceBlocks.value = workspace.getAllBlocks(false).length > 0
   updateToolbarState()
+  renderBlockSelection()
   connectionOverlay?.scheduleRender()
 }
 
@@ -205,7 +419,7 @@ const resetPreviewValues = (toolbox: TemplateToolboxData) => {
   })
 
   toolbox.params.forEach((param) => {
-    previewValues[param.paramName] = ''
+    previewValues[param.paramName] = param.paramType === 'BOOLEAN' ? false : ''
   })
   previewResult.value = null
 }
@@ -293,21 +507,26 @@ const parsePreviewArrayValue = (
 
 const getPreviewValue = (paramName: string, paramType: string): TemplatePreviewValue | null => {
   const value = previewValues[paramName] ?? ''
+  const textValue = typeof value === 'string' ? value : ''
+
+  if (paramType === 'BOOLEAN') {
+    return value === true
+  }
 
   if (isObjectArrayParam(paramType)) {
-    return parseObjectArrayValue(paramName, value)
+    return parseObjectArrayValue(paramName, textValue)
   }
 
   if (paramType === 'NUMBER') {
-    const numericValue = Number(value)
+    const numericValue = Number(textValue)
     return Number.isFinite(numericValue) ? numericValue : 0
   }
 
   if (paramType === 'STRING_ARRAY' || paramType === 'NUMBER_ARRAY') {
-    return parsePreviewArrayValue(paramName, paramType, value)
+    return parsePreviewArrayValue(paramName, paramType, textValue)
   }
 
-  return value
+  return textValue
 }
 
 const getPreviewPlaceholder = (paramType: string) => {
@@ -349,7 +568,7 @@ const readTemplateLinks = (state: unknown): TemplateNodeLink[] => {
   }
 
   const record = state as Record<string, unknown>
-  const value = record[TEMPLATE_LINKS_KEY] ?? record[TEMPLATE_UI_LINKS_KEY]
+  const value = record[TEMPLATE_UI_LINKS_KEY] ?? record[TEMPLATE_LINKS_KEY]
   return Array.isArray(value) ? value.filter(isTemplateNodeLink) : []
 }
 
@@ -433,8 +652,8 @@ const buildTemplateBranches = (links: TemplateNodeLink[]) => {
 
     branches[blockId] = {
       conditionBlockId: conditionLink?.sourceId,
-      thenBlockId: thenLink?.targetId,
-      elseBlockId: elseLink?.targetId,
+      thenBlockId: findLinkedExpressionTailBlockId(links, thenLink?.targetId),
+      elseBlockId: findLinkedExpressionTailBlockId(links, elseLink?.targetId),
     }
   })
 
@@ -698,6 +917,20 @@ const validateBinaryExpressionLinks = (links: TemplateNodeLink[]) => {
   const blockById = new Map(blocks.map((block) => [block.id, block]))
 
   blocks.forEach((block) => {
+    if (block.type === 'logic_negate') {
+      const conditionLink = links.find(
+        (link) =>
+          link.targetId === block.id && (link.targetPort ?? 'input') === 'condition',
+      )
+
+      if (!conditionLink) {
+        errors.push('NOT 逻辑非需要连接 Boolean 条件')
+      } else if (!hasBlockOutputCheck(blockById.get(conditionLink.sourceId), 'Boolean')) {
+        errors.push('NOT 逻辑非的输入必须是 Boolean 结果')
+      }
+      return
+    }
+
     if (block.type === 'logic_operation') {
       const leftLink = links.find(
         (link) =>
@@ -873,6 +1106,52 @@ const rewriteLoopCollectionPrefixLinks = (links: TemplateNodeLink[]) => {
   return nextLinks
 }
 
+const rewriteIfPrefixLinksForRendering = (links: TemplateNodeLink[]) => {
+  if (!workspace) {
+    return links
+  }
+
+  const ifBlockIds = new Set(
+    workspace
+      .getAllBlocks(false)
+      .filter((block) => block.type === 'controls_if')
+      .map((block) => block.id),
+  )
+  let nextLinks = [...links]
+
+  ifBlockIds.forEach((blockId) => {
+    const prefixLink = nextLinks.find(
+      (link) =>
+        link.targetId === blockId &&
+        (link.sourcePort ?? 'output') === 'output' &&
+        (link.targetPort ?? 'input') === 'input',
+    )
+
+    if (!prefixLink) {
+      return
+    }
+
+    const branchLinks = nextLinks.filter(
+      (link) =>
+        link.sourceId === blockId &&
+        ((link.sourcePort ?? 'output') === 'then' ||
+          (link.sourcePort ?? 'output') === 'else'),
+    )
+
+    nextLinks = nextLinks.filter((link) => link !== prefixLink)
+    branchLinks.forEach((branchLink) => {
+      nextLinks.push({
+        sourceId: prefixLink.sourceId,
+        sourcePort: 'output',
+        targetId: branchLink.targetId,
+        targetPort: 'input',
+      })
+    })
+  })
+
+  return nextLinks
+}
+
 const isGraphLink = (link: TemplateNodeLink) =>
   (link.sourcePort ?? 'output') !== 'output' || (link.targetPort ?? 'input') !== 'input'
 
@@ -888,6 +1167,7 @@ const saveWorkspaceWithLinks = () => {
     links: autoLinks,
   } = buildWorkspaceWithAutoLoopItems(savedWorkspace, rawLinks)
   const links = rewriteLoopCollectionPrefixLinks(autoLinks)
+  const renderingLinks = rewriteIfPrefixLinksForRendering(links)
   const nodeOrder = buildLinkedNodeOrder(links)
   const shouldSaveGraphMetadata = links.some(isGraphLink)
   const branches = buildTemplateBranches(links)
@@ -903,7 +1183,7 @@ const saveWorkspaceWithLinks = () => {
   }
 
   if (shouldSaveGraphMetadata) {
-    nextWorkspace[TEMPLATE_LINKS_KEY] = links
+    nextWorkspace[TEMPLATE_LINKS_KEY] = renderingLinks
     nextWorkspace[TEMPLATE_BRANCHES_KEY] = branches
     nextWorkspace[TEMPLATE_LOOPS_KEY] = loops
     nextWorkspace[TEMPLATE_MATH_EXPRESSIONS_KEY] = mathExpressions
@@ -916,6 +1196,7 @@ const saveWorkspaceWithLinks = () => {
 const disposeCurrentWorkspace = () => {
   resizeObserver?.disconnect()
   resizeObserver = null
+  detachWorkspaceSelection()
   disposeTemplateWorkspace(workspace, handleWorkspaceChange)
   connectionOverlay?.dispose()
   connectionOverlay = null
@@ -926,11 +1207,70 @@ const disposeCurrentWorkspace = () => {
   canRedo.value = false
 }
 
+const handleGroupBlockDrag = (event: Blockly.Events.Abstract) => {
+  if (!workspace || event.type !== Blockly.Events.BLOCK_DRAG) {
+    return
+  }
+
+  const dragEvent = event as Blockly.Events.BlockDrag
+  if (!dragEvent.blockId) {
+    return
+  }
+
+  if (dragEvent.isStart) {
+    if (selectedBlockIds.value.size <= 1 || !selectedBlockIds.value.has(dragEvent.blockId)) {
+      groupDragState = null
+      return
+    }
+
+    const draggedBlock = workspace.getBlockById(dragEvent.blockId) as Blockly.BlockSvg | null
+    const start = draggedBlock?.getRelativeToSurfaceXY()
+    groupDragState = start
+      ? { blockId: dragEvent.blockId, startX: start.x, startY: start.y }
+      : null
+    return
+  }
+
+  if (!groupDragState || groupDragState.blockId !== dragEvent.blockId) {
+    return
+  }
+
+  const dragState = groupDragState
+  groupDragState = null
+  const draggedBlock = workspace.getBlockById(dragEvent.blockId) as Blockly.BlockSvg | null
+  const end = draggedBlock?.getRelativeToSurfaceXY()
+  if (!end) {
+    return
+  }
+
+  const deltaX = end.x - dragState.startX
+  const deltaY = end.y - dragState.startY
+  if (deltaX === 0 && deltaY === 0) {
+    return
+  }
+
+  Blockly.Events.setGroup(true)
+  try {
+    selectedBlockIds.value.forEach((blockId) => {
+      if (blockId === dragEvent.blockId) {
+        return
+      }
+      workspace?.getBlockById(blockId)?.moveBy(deltaX, deltaY, ['drag'])
+    })
+  } finally {
+    Blockly.Events.setGroup(false)
+  }
+  dirty.value = true
+  saveErrors.value = []
+  connectionOverlay?.scheduleRender()
+}
+
 const handleWorkspaceChange = (event: Blockly.Events.Abstract) => {
   if (!workspace || disposed) {
     return
   }
 
+  handleGroupBlockDrag(event)
   refreshWorkspaceState()
 
   if (!ready.value || restoringWorkspace || event.isUiEvent) {
@@ -955,6 +1295,7 @@ const initializeWorkspace = async () => {
 
   registerTemplateBlocks()
   workspace = createTemplateWorkspace(workspaceContainer.value, handleWorkspaceChange)
+  attachWorkspaceSelection()
   connectionOverlay = new TemplateConnectionOverlay(workspace, () => {
     if (!ready.value || restoringWorkspace) {
       return
@@ -1189,6 +1530,123 @@ const handleWorkspaceDrop = (event: DragEvent) => {
   }
 }
 
+const copySelectedBlocks = () => {
+  if (!workspace || selectedBlockIds.value.size === 0) {
+    ElMessage.warning('请先选择需要复制的积木')
+    return
+  }
+
+  const selectedIds = new Set(selectedBlockIds.value)
+  const blocks = workspace
+    .getAllBlocks(false)
+    .filter((block) => selectedIds.has(block.id))
+    .map((block): TemplateClipboardBlock | null => {
+      const state = Blockly.serialization.blocks.save(block, {
+        addCoordinates: true,
+        addInputBlocks: false,
+        addNextBlocks: false,
+        doFullSerialization: true,
+        saveIds: false,
+      })
+      return state ? { sourceId: block.id, state } : null
+    })
+    .filter((item): item is TemplateClipboardBlock => item !== null)
+
+  if (blocks.length === 0) {
+    ElMessage.warning('选中的积木无法复制')
+    return
+  }
+
+  const links = (connectionOverlay?.getLinks() ?? []).filter(
+    (link) => selectedIds.has(link.sourceId) && selectedIds.has(link.targetId),
+  )
+  blockClipboard.value = {
+    blocks,
+    links: links.map((link) => ({ ...link })),
+    pasteCount: 0,
+  }
+  ElMessage.success(`已复制 ${blocks.length} 个积木和 ${links.length} 条内部连线`)
+}
+
+const pasteCopiedBlocks = () => {
+  if (!workspace || !blockClipboard.value?.blocks.length) {
+    ElMessage.warning('暂无可粘贴的积木')
+    return
+  }
+
+  const clipboard = blockClipboard.value
+  const containerRect = workspaceContainer.value?.getBoundingClientRect()
+  const pointer =
+    lastCanvasPointer ??
+    (containerRect
+      ? {
+          clientX: containerRect.left + containerRect.width / 2,
+          clientY: containerRect.top + containerRect.height / 2,
+        }
+      : null)
+  if (!pointer) {
+    ElMessage.warning('无法获取粘贴位置')
+    return
+  }
+
+  const pasteOrigin = Blockly.utils.svgMath.screenToWsCoordinates(
+    workspace,
+    new Blockly.utils.Coordinate(pointer.clientX, pointer.clientY),
+  )
+  const sourceX = Math.min(...clipboard.blocks.map((item) => item.state.x ?? 0))
+  const sourceY = Math.min(...clipboard.blocks.map((item) => item.state.y ?? 0))
+  const offset = 16 * clipboard.pasteCount
+  clipboard.pasteCount += 1
+  const blockIdMap = new Map<string, string>()
+  const pastedIds: string[] = []
+  let blockStates: Blockly.serialization.blocks.State[]
+
+  try {
+    blockStates = clipboard.blocks.map((item) => {
+      const state = structuredClone(item.state)
+      state.id = Blockly.utils.idGenerator.genUid()
+      state.x = pasteOrigin.x + ((state.x ?? 0) - sourceX) + offset
+      state.y = pasteOrigin.y + ((state.y ?? 0) - sourceY) + offset
+      return state
+    })
+  } catch {
+    ElMessage.error('复制数据解析失败，请重新复制后再粘贴')
+    return
+  }
+
+  Blockly.Events.setGroup(true)
+  try {
+    clipboard.blocks.forEach((item, index) => {
+      const state = blockStates[index]
+      if (!state) {
+        return
+      }
+      const pastedBlock = Blockly.serialization.blocks.append(state, workspace!, {
+        recordUndo: true,
+      })
+      blockIdMap.set(item.sourceId, pastedBlock.id)
+      pastedIds.push(pastedBlock.id)
+    })
+  } catch {
+    ElMessage.error('积木粘贴失败，请重新复制后再试')
+    return
+  } finally {
+    Blockly.Events.setGroup(false)
+  }
+
+  const pastedLinks = clipboard.links.flatMap((link) => {
+    const sourceId = blockIdMap.get(link.sourceId)
+    const targetId = blockIdMap.get(link.targetId)
+    return sourceId && targetId ? [{ ...link, sourceId, targetId }] : []
+  })
+  connectionOverlay?.setLinks([...(connectionOverlay.getLinks() ?? []), ...pastedLinks])
+  setSelectedBlockIds(pastedIds)
+  dirty.value = true
+  saveErrors.value = []
+  refreshWorkspaceState()
+  ElMessage.success(`已粘贴 ${pastedIds.length} 个积木`)
+}
+
 const undoWorkspace = () => {
   workspace?.undo(false)
   refreshWorkspaceState()
@@ -1326,6 +1784,18 @@ const handleShortcut = (event: KeyboardEvent) => {
     return
   }
 
+  if (hasModifier && key === 'c') {
+    event.preventDefault()
+    copySelectedBlocks()
+    return
+  }
+
+  if (hasModifier && key === 'v') {
+    event.preventDefault()
+    pasteCopiedBlocks()
+    return
+  }
+
   if (hasModifier && key === 'z') {
     event.preventDefault()
     undoWorkspace()
@@ -1440,6 +1910,21 @@ watch(previewExpanded, async () => {
           <div class="template-editor-page__tool-group">
             <el-button :icon="RefreshLeft" title="撤销" :disabled="!ready || !canUndo" @click="undoWorkspace" />
             <el-button :icon="RefreshRight" title="重做" :disabled="!ready || !canRedo" @click="redoWorkspace" />
+            <el-button
+              :icon="CopyDocument"
+              :title="selectedBlockCount ? `复制选中的 ${selectedBlockCount} 个积木` : '复制选中积木'"
+              :disabled="!ready || selectedBlockCount === 0"
+              @click="copySelectedBlocks"
+            />
+            <el-button
+              :icon="DocumentCopy"
+              title="粘贴积木"
+              :disabled="!ready || !canPasteBlocks"
+              @click="pasteCopiedBlocks"
+            />
+            <span v-if="selectedBlockCount" class="template-editor-page__selected-count">
+              已选 {{ selectedBlockCount }} 个
+            </span>
           </div>
           <div class="template-editor-page__divider" />
           <div class="template-editor-page__tool-group">
@@ -1467,7 +1952,7 @@ watch(previewExpanded, async () => {
                   <span>从左侧拖入积木后，在画布中移动、编辑并连接</span>
                 </div>
                 <span class="template-editor-page__hint">
-                  快捷键：Ctrl+Z 撤销 · Ctrl+Y 重做 · Ctrl+S 保存 · Delete 删除选中积木
+                  Shift+拖拽框选 · Ctrl+点击多选 · Ctrl+C/V 复制粘贴 · Ctrl+Z/Y 撤销重做 · Ctrl+S 保存
                 </span>
               </div>
             </section>
@@ -1492,8 +1977,16 @@ watch(previewExpanded, async () => {
               <div class="template-editor-page__param-grid">
                 <label v-for="param in toolboxParams" :key="param.paramName">
                   <span>{{ param.paramLabel || param.paramName }} <em>{{ param.paramType }}</em></span>
+                  <el-radio-group
+                    v-if="param.paramType === 'BOOLEAN'"
+                    v-model="previewValues[param.paramName] as boolean"
+                  >
+                    <el-radio-button :value="true">true</el-radio-button>
+                    <el-radio-button :value="false">false</el-radio-button>
+                  </el-radio-group>
                   <el-input
-                    v-model="previewValues[param.paramName]"
+                    v-else
+                    v-model="previewValues[param.paramName] as string"
                     :placeholder="getPreviewPlaceholder(param.paramType)"
                   />
                 </label>
@@ -1711,6 +2204,12 @@ watch(previewExpanded, async () => {
   text-align: center;
 }
 
+.template-editor-page__selected-count {
+  color: #3f7bf3;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
 .template-editor-page__reference {
   width: auto !important;
   padding: 0 10px !important;
@@ -1751,6 +2250,14 @@ watch(previewExpanded, async () => {
 .template-editor-page__workspace {
   position: absolute;
   inset: 0;
+
+  :deep(.template-editor-page__selection-box) {
+    position: absolute;
+    z-index: 8;
+    border: 1px solid #3f7bf3;
+    background: rgb(63 123 243 / 10%);
+    pointer-events: none;
+  }
 }
 
 .template-editor-page__empty-guide {
@@ -2024,6 +2531,12 @@ watch(previewExpanded, async () => {
   :deep(.blocklySelected > .template-block-card) {
     stroke: #3f7bf3;
     stroke-width: 2.5px;
+  }
+
+  :deep(.template-multi-selected > .template-block-card) {
+    stroke: #3f7bf3;
+    stroke-width: 2.8px;
+    filter: drop-shadow(0 0 4px rgb(63 123 243 / 28%));
   }
 
   :deep(.template-block-label-pill) {

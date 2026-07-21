@@ -34,6 +34,10 @@ const emit = defineEmits<{
 }>()
 
 const getParamStyle = (param: TemplateToolboxParam) => {
+  if (param.paramType === 'BOOLEAN') {
+    return { colour: '#d94f70', tagClass: 'is-boolean' }
+  }
+
   if (param.paramType === 'NUMBER') {
     return { colour: '#5b7aa5', tagClass: 'is-number' }
   }
@@ -497,6 +501,11 @@ const handleDragStart = (event: DragEvent, state: TemplateToolboxBlockState) => 
 .template-blockly-toolbox__tag.is-math {
   background: #eafaf1;
   color: #2fc46b;
+}
+
+.template-blockly-toolbox__tag.is-boolean {
+  background: #fceef2;
+  color: #c43f61;
 }
 
 .template-blockly-toolbox__empty {

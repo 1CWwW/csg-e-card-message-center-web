@@ -88,6 +88,7 @@ export type TemplatePreviewObject = Record<string, string | number | boolean | n
 export type TemplatePreviewValue =
   | string
   | number
+  | boolean
   | string[]
   | number[]
   | TemplatePreviewObject[]

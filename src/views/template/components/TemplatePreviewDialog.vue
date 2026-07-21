@@ -14,6 +14,7 @@ import type {
 type PreviewInputValue =
   | string
   | number
+  | boolean
   | null
   | string[]
   | Array<number | null>
@@ -93,6 +94,10 @@ const createInitialValue = (param: TemplateToolboxParam): PreviewInputValue => {
     return null
   }
 
+  if (paramType === 'BOOLEAN') {
+    return false
+  }
+
   if (paramType === 'STRING_ARRAY') {
     return ['']
   }
@@ -156,6 +161,13 @@ const buildPreviewValues = () => {
 
     if (param.paramType === 'NUMBER') {
       if (typeof value === 'number') {
+        requestValues[param.paramName] = value
+      }
+      continue
+    }
+
+    if (param.paramType === 'BOOLEAN') {
+      if (typeof value === 'boolean') {
         requestValues[param.paramName] = value
       }
       continue
@@ -332,6 +344,13 @@ onBeforeUnmount(() => {
               v-model="values[param.paramName] as string"
               clearable
             />
+            <el-radio-group
+              v-else-if="param.paramType === 'BOOLEAN'"
+              v-model="values[param.paramName] as boolean"
+            >
+              <el-radio-button :value="true">true</el-radio-button>
+              <el-radio-button :value="false">false</el-radio-button>
+            </el-radio-group>
             <el-input-number
               v-else-if="param.paramType === 'NUMBER'"
               v-model="values[param.paramName] as number | null"

@@ -197,6 +197,10 @@ const setOperationLabel = (block: OperationBlock) => {
 }
 
 const getSceneParamColour = (paramType: string) => {
+  if (paramType === 'BOOLEAN') {
+    return '#d94f70'
+  }
+
   if (paramType === 'NUMBER') {
     return '#5b7aa5'
   }
@@ -213,6 +217,10 @@ const getSceneParamColour = (paramType: string) => {
 }
 
 const getSceneParamOutputCheck = (paramType: string) => {
+  if (paramType === 'BOOLEAN') {
+    return 'Boolean'
+  }
+
   if (paramType === 'NUMBER') {
     return 'Number'
   }

@@ -305,7 +305,7 @@ const submitForm = async () => {
     @update:model-value="handleModelValueChange"
   >
     <div v-loading="detailLoading" class="channel-dialog__body">
-      <el-form ref="formRef" :model="formModel" :rules="formRules" label-width="96px">
+      <el-form ref="formRef" :model="formModel" :rules="formRules" label-width="112px">
         <el-form-item label="渠道名称" prop="channelName">
           <el-input
             v-model.trim="formModel.channelName"
@@ -371,6 +371,10 @@ const submitForm = async () => {
 <style scoped lang="scss">
 .channel-dialog__body {
   min-height: 360px;
+
+  :deep(.el-form-item__label) {
+    white-space: nowrap;
+  }
 }
 
 .channel-dialog__select {

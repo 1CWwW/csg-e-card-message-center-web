@@ -324,7 +324,7 @@ const submitForm = async () => {
         </template>
       </el-alert>
 
-      <el-form ref="formRef" :model="formModel" :rules="formRules" label-width="92px">
+      <el-form ref="formRef" :model="formModel" :rules="formRules" label-width="108px">
         <el-form-item label="参数名" prop="paramName">
           <el-input
             v-model.trim="formModel.paramName"
@@ -386,6 +386,10 @@ const submitForm = async () => {
 <style scoped lang="scss">
 .scene-param-dialog__body {
   min-height: 300px;
+
+  :deep(.el-form-item__label) {
+    white-space: nowrap;
+  }
 }
 
 .scene-param-dialog__usage {

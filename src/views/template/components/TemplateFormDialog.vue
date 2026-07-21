@@ -480,6 +480,10 @@ const submitForm = async () => {
   &.is-string_array {
     background: #55a78f;
   }
+
+  &.is-boolean {
+    background: #d94f70;
+  }
 }
 
 .template-form-dialog__param-name {

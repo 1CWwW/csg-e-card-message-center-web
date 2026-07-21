@@ -2,6 +2,7 @@ export type SceneParamRequired = 0 | 1
 
 export const SCENE_PARAM_TYPE_OPTIONS = [
   { value: 'STRING', label: '字符串' },
+  { value: 'BOOLEAN', label: '布尔值' },
   { value: 'NUMBER', label: '数值' },
   { value: 'TIME', label: '时间' },
   { value: 'STRING_ARRAY', label: '字符串数组' },
