@@ -1,18 +1,18 @@
 import type { AxiosResponse } from 'axios'
 import request from '../utils/request'
-import type { ApiResponse } from '../types/api'
+import type { CommonResult } from '../types/api'
 import type { AsyncPushResult, PushRequest, SyncPushResult } from '../types/push'
 
-const getRequiredData = <T>(response: AxiosResponse<ApiResponse<T>>) => {
-  if (response.data.data === undefined) {
-    throw new Error(response.data.message || response.data.msg || '响应数据为空')
+const getRequiredData = <T>(response: AxiosResponse<CommonResult<T>>) => {
+  if (response.data.result === undefined) {
+    throw new Error(response.data.message || '响应数据为空')
   }
 
-  return response.data.data
+  return response.data.result
 }
 
 export const pushMessageSync = async (payload: PushRequest) => {
-  const response = await request.post<ApiResponse<SyncPushResult>>(
+  const response = await request.post<CommonResult<SyncPushResult>>(
     '/api/message-center/push/sync',
     {
       ...payload,
@@ -24,7 +24,7 @@ export const pushMessageSync = async (payload: PushRequest) => {
 }
 
 export const pushMessageAsync = async (payload: PushRequest) => {
-  const response = await request.post<ApiResponse<AsyncPushResult>>(
+  const response = await request.post<CommonResult<AsyncPushResult>>(
     '/api/message-center/push/async',
     {
       ...payload,

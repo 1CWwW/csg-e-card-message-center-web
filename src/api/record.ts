@@ -1,6 +1,6 @@
 import axios, { type AxiosResponse } from 'axios'
 import request from '../utils/request'
-import type { ApiResponse } from '../types/api'
+import type { CommonResult } from '../types/api'
 import type {
   MessageRecordDetail,
   MessageRecordOverview,
@@ -12,12 +12,12 @@ import type {
 
 type RequestParams = Record<string, string | number>
 
-const getRequiredData = <T>(response: AxiosResponse<ApiResponse<T>>) => {
-  if (response.data.data === undefined) {
-    throw new Error(response.data.message || response.data.msg || '响应数据为空')
+const getRequiredData = <T>(response: AxiosResponse<CommonResult<T>>) => {
+  if (response.data.result === undefined) {
+    throw new Error(response.data.message || '响应数据为空')
   }
 
-  return response.data.data
+  return response.data.result
 }
 
 const buildRecordParams = (query: MessageRecordQuery, includePage: boolean) => {
@@ -76,31 +76,31 @@ const getBlobErrorMessage = async (error: unknown) => {
 
 export const getRecordOverview = async () => {
   const response =
-    await request.get<ApiResponse<MessageRecordOverview>>('/api/msg/record/overview')
+    await request.get<CommonResult<MessageRecordOverview>>('/api/msg/record/overview')
   return getRequiredData(response)
 }
 
 export const getRecordList = async (params: MessageRecordQuery) => {
-  const response = await request.get<ApiResponse<MessageRecordPageData>>('/api/msg/record/list', {
+  const response = await request.get<CommonResult<MessageRecordPageData>>('/api/msg/record/list', {
     params: buildRecordParams(params, true),
   })
   return getRequiredData(response)
 }
 
 export const getRecordDetail = async (id: string) => {
-  const response = await request.get<ApiResponse<MessageRecordDetail>>(`/api/msg/record/${id}`)
+  const response = await request.get<CommonResult<MessageRecordDetail>>(`/api/msg/record/${id}`)
   return getRequiredData(response)
 }
 
 export const getRecordResendLogs = async (id: string) => {
-  const response = await request.get<ApiResponse<MessageRecordResendLogVO[]>>(
+  const response = await request.get<CommonResult<MessageRecordResendLogVO[]>>(
     `/api/msg/record/${id}/resend-logs`,
   )
   return getRequiredData(response)
 }
 
 export const resendRecord = async (id: string) => {
-  const response = await request.post<ApiResponse<MessageResendResult>>(
+  const response = await request.post<CommonResult<MessageResendResult>>(
     `/api/msg/record/${id}/resend`,
   )
   return getRequiredData(response)

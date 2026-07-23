@@ -1,13 +1,11 @@
-export interface ApiResponse<T = unknown> {
-  code: number | string
-  data?: T
-  message?: string
-  msg?: string
-  success?: boolean
+export interface CommonResult<T = unknown> {
+  code: number
+  message: string
+  result: T
 }
 
 export interface ApiErrorPayload {
-  code?: number | string
+  code?: number
   message?: string
   msg?: string
 }

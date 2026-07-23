@@ -1,6 +1,6 @@
 import type { AxiosResponse } from 'axios'
 import request from '../utils/request'
-import type { ApiResponse } from '../types/api'
+import type { CommonResult } from '../types/api'
 import type {
   ChannelCreateForm,
   ChannelItem,
@@ -11,12 +11,12 @@ import type {
 
 type RequestParams = Record<string, string | number>
 
-const getRequiredData = <T>(response: AxiosResponse<ApiResponse<T>>) => {
-  if (response.data.data === undefined) {
+const getRequiredData = <T>(response: AxiosResponse<CommonResult<T>>) => {
+  if (response.data.result === undefined) {
     throw new Error(response.data.message || '响应数据为空')
   }
 
-  return response.data.data
+  return response.data.result
 }
 
 const buildChannelListParams = (query: ChannelQuery) => {
@@ -45,7 +45,7 @@ const buildChannelListParams = (query: ChannelQuery) => {
 }
 
 export const getChannelList = async (query: ChannelQuery) => {
-  const response = await request.get<ApiResponse<ChannelPageData>>('/api/msg/channel/list', {
+  const response = await request.get<CommonResult<ChannelPageData>>('/api/msg/channel/list', {
     params: buildChannelListParams(query),
   })
 
@@ -53,29 +53,29 @@ export const getChannelList = async (query: ChannelQuery) => {
 }
 
 export const getChannelDetail = async (id: string) => {
-  const response = await request.get<ApiResponse<ChannelItem>>(`/api/msg/channel/${id}`)
+  const response = await request.get<CommonResult<ChannelItem>>(`/api/msg/channel/${id}`)
 
   return getRequiredData(response)
 }
 
 export const createChannel = async (form: ChannelCreateForm) => {
-  const response = await request.post<ApiResponse<ChannelItem>>('/api/msg/channel', form)
+  const response = await request.post<CommonResult<ChannelItem>>('/api/msg/channel', form)
 
   return getRequiredData(response)
 }
 
 export const updateChannel = async (id: string, form: ChannelUpdateForm) => {
-  const response = await request.put<ApiResponse<ChannelItem>>(`/api/msg/channel/${id}`, form)
+  const response = await request.put<CommonResult<ChannelItem>>(`/api/msg/channel/${id}`, form)
 
   return getRequiredData(response)
 }
 
 export const deleteChannel = async (id: string) => {
-  await request.delete<ApiResponse<object>>(`/api/msg/channel/${id}`)
+  await request.delete<CommonResult<object>>(`/api/msg/channel/${id}`)
 }
 
 export const toggleChannelStatus = async (id: string) => {
-  const response = await request.put<ApiResponse<ChannelItem>>(`/api/msg/channel/${id}/toggle`)
+  const response = await request.put<CommonResult<ChannelItem>>(`/api/msg/channel/${id}/toggle`)
 
   return getRequiredData(response)
 }

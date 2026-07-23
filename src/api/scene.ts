@@ -1,6 +1,6 @@
 import type { AxiosResponse } from 'axios'
 import request from '../utils/request'
-import type { ApiResponse } from '../types/api'
+import type { CommonResult } from '../types/api'
 import type {
   SceneCodeCheckResult,
   SceneCreateForm,
@@ -13,12 +13,12 @@ import type {
 
 type RequestParams = Record<string, string | number>
 
-const getRequiredData = <T>(response: AxiosResponse<ApiResponse<T>>) => {
-  if (response.data.data === undefined) {
+const getRequiredData = <T>(response: AxiosResponse<CommonResult<T>>) => {
+  if (response.data.result === undefined) {
     throw new Error(response.data.message || '响应数据为空')
   }
 
-  return response.data.data
+  return response.data.result
 }
 
 const buildSceneListParams = (query: SceneQuery) => {
@@ -47,7 +47,7 @@ const buildSceneListParams = (query: SceneQuery) => {
 }
 
 export const getSceneList = async (query: SceneQuery) => {
-  const response = await request.get<ApiResponse<ScenePageData>>('/api/msg/scene/list', {
+  const response = await request.get<CommonResult<ScenePageData>>('/api/msg/scene/list', {
     params: buildSceneListParams(query),
   })
 
@@ -55,35 +55,35 @@ export const getSceneList = async (query: SceneQuery) => {
 }
 
 export const getSceneDetail = async (id: string) => {
-  const response = await request.get<ApiResponse<SceneItem>>(`/api/msg/scene/${id}`)
+  const response = await request.get<CommonResult<SceneItem>>(`/api/msg/scene/${id}`)
 
   return getRequiredData(response)
 }
 
 export const createScene = async (form: SceneCreateForm) => {
-  const response = await request.post<ApiResponse<SceneItem>>('/api/msg/scene', form)
+  const response = await request.post<CommonResult<SceneItem>>('/api/msg/scene', form)
 
   return getRequiredData(response)
 }
 
 export const updateScene = async (id: string, form: SceneUpdateForm) => {
-  const response = await request.put<ApiResponse<SceneItem>>(`/api/msg/scene/${id}`, form)
+  const response = await request.put<CommonResult<SceneItem>>(`/api/msg/scene/${id}`, form)
 
   return getRequiredData(response)
 }
 
 export const deleteScene = async (id: string) => {
-  await request.delete<ApiResponse<object>>(`/api/msg/scene/${id}`)
+  await request.delete<CommonResult<object>>(`/api/msg/scene/${id}`)
 }
 
 export const toggleSceneStatus = async (id: string) => {
-  const response = await request.put<ApiResponse<SceneItem>>(`/api/msg/scene/${id}/toggle`)
+  const response = await request.put<CommonResult<SceneItem>>(`/api/msg/scene/${id}/toggle`)
 
   return getRequiredData(response)
 }
 
 export const checkSceneDisable = async (id: string) => {
-  const response = await request.get<ApiResponse<SceneDisableCheckResult>>(
+  const response = await request.get<CommonResult<SceneDisableCheckResult>>(
     `/api/msg/scene/${id}/disable-check`,
   )
 
@@ -97,7 +97,7 @@ export const checkSceneCode = async (sceneCode: string, excludeId?: string) => {
     params.excludeId = excludeId
   }
 
-  const response = await request.get<ApiResponse<SceneCodeCheckResult>>('/api/msg/scene/check-code', {
+  const response = await request.get<CommonResult<SceneCodeCheckResult>>('/api/msg/scene/check-code', {
     params,
   })
 

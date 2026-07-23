@@ -241,6 +241,14 @@ const groups = computed<ToolboxGroup[]>(() => [
     title: '数学运算',
     items: [
       {
+        key: 'math_number',
+        label: '数字常量',
+        tag: '输入数值',
+        colour: '#2fc46b',
+        tagClass: 'is-math',
+        state: { type: 'math_number', fields: { NUM: '0' } },
+      },
+      {
         key: 'math_add',
         label: '加法 +',
         tag: '运算',

@@ -191,6 +191,13 @@ const getBlockPorts = (block: Blockly.BlockSvg): TemplateNodePort[] => {
       {
         block,
         side: 'left',
+        key: 'input',
+        direction: 'target',
+        label: '前置',
+      },
+      {
+        block,
+        side: 'left',
         key: 'leftValue',
         direction: 'target',
         label: '左值',

@@ -582,6 +582,7 @@ const isRenderableEntryBlock = (block: Blockly.Block) =>
     'logic_compare',
     'string_contains',
     'string_like',
+    'math_number',
     'math_arithmetic',
     'math_modulo',
   ].includes(block.type)
@@ -591,11 +592,26 @@ const buildLinkedNodeOrder = (links: TemplateNodeLink[]) => {
     return []
   }
 
-  const sequenceLinks = links.filter(
-    (link) => (link.sourcePort ?? 'output') === 'output' && (link.targetPort ?? 'input') === 'input',
-  )
-  const blockIds = new Set(workspace.getAllBlocks(false).map((block) => block.id))
-  const renderableBlocks = workspace.getAllBlocks(false).filter(isRenderableEntryBlock)
+  const blocks = workspace.getAllBlocks(false)
+  const blockById = new Map(blocks.map((block) => [block.id, block]))
+  const sequenceLinks = links.filter((link) => {
+    if ((link.sourcePort ?? 'output') !== 'output') {
+      return false
+    }
+
+    const targetPort = link.targetPort ?? 'input'
+    if (targetPort === 'input') {
+      return true
+    }
+
+    const targetBlock = blockById.get(link.targetId)
+    return (
+      targetPort === 'leftValue' &&
+      (targetBlock?.type === 'math_arithmetic' || targetBlock?.type === 'math_modulo')
+    )
+  })
+  const blockIds = new Set(blocks.map((block) => block.id))
+  const renderableBlocks = blocks.filter(isRenderableEntryBlock)
   const renderableBlockIds = new Set(renderableBlocks.map((block) => block.id))
   const sourceIds = new Set(sequenceLinks.map((link) => link.sourceId))
   const targetIds = new Set(sequenceLinks.map((link) => link.targetId))
@@ -665,10 +681,25 @@ const findLinkedExpressionTailBlockId = (links: TemplateNodeLink[], entryBlockId
     return entryBlockId
   }
 
-  const blockIds = new Set(workspace.getAllBlocks(false).map((block) => block.id))
-  const sequenceLinks = links.filter(
-    (link) => (link.sourcePort ?? 'output') === 'output' && (link.targetPort ?? 'input') === 'input',
-  )
+  const blocks = workspace.getAllBlocks(false)
+  const blockById = new Map(blocks.map((block) => [block.id, block]))
+  const blockIds = new Set(blockById.keys())
+  const sequenceLinks = links.filter((link) => {
+    if ((link.sourcePort ?? 'output') !== 'output') {
+      return false
+    }
+
+    const targetPort = link.targetPort ?? 'input'
+    if (targetPort === 'input') {
+      return true
+    }
+
+    const targetBlock = blockById.get(link.targetId)
+    return (
+      targetPort === 'leftValue' &&
+      (targetBlock?.type === 'math_arithmetic' || targetBlock?.type === 'math_modulo')
+    )
+  })
   const visited = new Set<string>()
   let currentId = entryBlockId
 
@@ -1050,6 +1081,59 @@ const validateTemplateLinks = (links: TemplateNodeLink[]) => [
   ...validateTemplateLoopLinks(links),
 ]
 
+const rewriteMathOperandPrefixLinks = (links: TemplateNodeLink[]) => {
+  if (!workspace) {
+    return links
+  }
+
+  const mathBlockIds = new Set(
+    workspace
+      .getAllBlocks(false)
+      .filter((block) => block.type === 'math_arithmetic' || block.type === 'math_modulo')
+      .map((block) => block.id),
+  )
+  let nextLinks = [...links]
+
+  mathBlockIds.forEach((mathBlockId) => {
+    const hasPrefixLink = nextLinks.some(
+      (link) =>
+        link.targetId === mathBlockId &&
+        (link.sourcePort ?? 'output') === 'output' &&
+        (link.targetPort ?? 'input') === 'input',
+    )
+    if (hasPrefixLink) {
+      return
+    }
+
+    const leftValueLink = nextLinks.find(
+      (link) =>
+        link.targetId === mathBlockId &&
+        (link.targetPort ?? 'input') === 'leftValue',
+    )
+    if (!leftValueLink) {
+      return
+    }
+
+    const operandPrefixLinkIndex = nextLinks.findIndex(
+      (link) =>
+        link.targetId === leftValueLink.sourceId &&
+        (link.sourcePort ?? 'output') === 'output' &&
+        (link.targetPort ?? 'input') === 'input',
+    )
+    if (operandPrefixLinkIndex < 0) {
+      return
+    }
+
+    nextLinks[operandPrefixLinkIndex] = {
+      ...nextLinks[operandPrefixLinkIndex],
+      targetId: mathBlockId,
+      targetPort: 'input',
+    }
+  })
+
+  return nextLinks
+}
+
 const rewriteLoopCollectionPrefixLinks = (links: TemplateNodeLink[]) => {
   if (!workspace) {
     return links
@@ -1162,10 +1246,11 @@ const saveWorkspaceWithLinks = () => {
 
   const savedWorkspace = saveTemplateWorkspace(workspace)
   const rawLinks = connectionOverlay?.getLinks() ?? []
+  const mathNormalizedLinks = rewriteMathOperandPrefixLinks(rawLinks)
   const {
     workspaceState,
     links: autoLinks,
-  } = buildWorkspaceWithAutoLoopItems(savedWorkspace, rawLinks)
+  } = buildWorkspaceWithAutoLoopItems(savedWorkspace, mathNormalizedLinks)
   const links = rewriteLoopCollectionPrefixLinks(autoLinks)
   const renderingLinks = rewriteIfPrefixLinksForRendering(links)
   const nodeOrder = buildLinkedNodeOrder(links)
@@ -1310,7 +1395,9 @@ const initializeWorkspace = async () => {
     restoringWorkspace = true
     try {
       loadTemplateWorkspace(workspace, document.workspace)
-      connectionOverlay.setLinks(readTemplateLinks(document.workspace))
+      connectionOverlay.setLinks(
+        rewriteMathOperandPrefixLinks(readTemplateLinks(document.workspace)),
+      )
       syncSceneParamBlockLabels(workspace, toolboxData.value)
       validateSceneParamBlocks(workspace, toolboxData.value)
     } finally {
@@ -1720,7 +1807,9 @@ const loadReference = async (detail: TemplateReferenceDetail) => {
   restoringWorkspace = true
   try {
     loadTemplateWorkspace(workspace, document.workspace)
-    connectionOverlay?.setLinks(readTemplateLinks(document.workspace))
+    connectionOverlay?.setLinks(
+      rewriteMathOperandPrefixLinks(readTemplateLinks(document.workspace)),
+    )
     syncSceneParamBlockLabels(workspace, toolboxData.value)
     validateSceneParamBlocks(workspace, toolboxData.value)
     dirty.value = true

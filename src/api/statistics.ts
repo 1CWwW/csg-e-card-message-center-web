@@ -1,7 +1,7 @@
 import type { AxiosResponse } from 'axios'
 import axios from 'axios'
 import request from '../utils/request'
-import type { ApiResponse } from '../types/api'
+import type { CommonResult } from '../types/api'
 import type {
   ChannelStatisticsItem,
   SceneStatisticsItem,
@@ -18,12 +18,12 @@ type StatisticsParams = Record<string, string | string[] | undefined>
 
 const arrayKeys = new Set(['channelTypes', 'sceneIds', 'unitIds', 'templateIds', 'callTypes'])
 
-const getRequiredData = <T>(response: AxiosResponse<ApiResponse<T>>) => {
-  if (response.data.data === undefined) {
-    throw new Error(response.data.message || response.data.msg || '响应数据为空')
+const getRequiredData = <T>(response: AxiosResponse<CommonResult<T>>) => {
+  if (response.data.result === undefined) {
+    throw new Error(response.data.message || '响应数据为空')
   }
 
-  return response.data.data
+  return response.data.result
 }
 
 const isStatisticsListResult = <T>(data: T[] | StatisticsListResult<T>): data is StatisticsListResult<T> => {
@@ -101,7 +101,7 @@ const getBlobErrorMessage = async (error: unknown) => {
 }
 
 const getStatisticsList = async <T>(url: string, query: StatisticsQuery) => {
-  const response = await request.get<ApiResponse<T[] | StatisticsListResult<T>>>(url, {
+  const response = await request.get<CommonResult<T[] | StatisticsListResult<T>>>(url, {
     params: buildStatisticsParams(query),
     paramsSerializer: { serialize: serializeStatisticsParams },
   })
@@ -119,7 +119,7 @@ const getStatisticsList = async <T>(url: string, query: StatisticsQuery) => {
 }
 
 export const getStatisticsOverview = async (query: StatisticsQuery) => {
-  const response = await request.get<ApiResponse<StatisticsOverview>>('/api/msg/statistics/overview', {
+  const response = await request.get<CommonResult<StatisticsOverview>>('/api/msg/statistics/overview', {
     params: buildStatisticsParams(query),
     paramsSerializer: { serialize: serializeStatisticsParams },
   })

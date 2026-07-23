@@ -1,6 +1,6 @@
 import axios, { AxiosError, type AxiosInstance, type AxiosResponse } from 'axios'
 import { ElMessage } from 'element-plus'
-import type { ApiErrorPayload, ApiResponse } from '../types/api'
+import type { ApiErrorPayload, CommonResult } from '../types/api'
 
 const defaultDevBaseUrl = '/xxzx-api'
 
@@ -13,25 +13,25 @@ const isRecord = (value: unknown): value is Record<string, unknown> => {
   return typeof value === 'object' && value !== null
 }
 
-const isApiResponse = (value: unknown): value is ApiResponse<unknown> => {
-  return isRecord(value) && ('code' in value || 'success' in value)
-}
-
-const getResponseMessage = (payload: ApiResponse<unknown> | ApiErrorPayload) => {
-  return payload.message || payload.msg || '请求处理失败'
-}
-
-const isBusinessSuccess = (payload: ApiResponse<unknown>) => {
+const isCommonResult = (value: unknown): value is CommonResult<unknown> => {
   return (
-    payload.success === true ||
-    payload.code === '00000' ||
-    payload.code === 0 ||
-    payload.code === '0' ||
-    payload.code === 200
+    isRecord(value) &&
+    typeof value.code === 'number' &&
+    typeof value.message === 'string' &&
+    'result' in value
   )
 }
 
-const getErrorMessage = (error: AxiosError<ApiErrorPayload | ApiResponse<unknown>>) => {
+const getResponseMessage = (payload: CommonResult<unknown> | ApiErrorPayload) => {
+  const fallbackMessage = 'msg' in payload ? payload.msg : undefined
+  return payload.message || fallbackMessage || '请求处理失败'
+}
+
+const isBusinessSuccess = (payload: CommonResult<unknown>) => {
+  return payload.code === 0
+}
+
+const getErrorMessage = (error: AxiosError<ApiErrorPayload | CommonResult<unknown>>) => {
   if (error.code === 'ECONNABORTED') {
     return '请求超时，请稍后重试'
   }
@@ -53,7 +53,7 @@ service.interceptors.response.use(
   (response: AxiosResponse<unknown>) => {
     const payload = response.data
 
-    if (!isApiResponse(payload)) {
+    if (!isCommonResult(payload)) {
       return response
     }
 
@@ -65,7 +65,7 @@ service.interceptors.response.use(
 
     return response
   },
-  (error: AxiosError<ApiErrorPayload | ApiResponse<unknown>>) => {
+  (error: AxiosError<ApiErrorPayload | CommonResult<unknown>>) => {
     ElMessage.error(getErrorMessage(error))
     return Promise.reject(error)
   },

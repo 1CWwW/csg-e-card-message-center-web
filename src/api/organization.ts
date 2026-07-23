@@ -1,18 +1,18 @@
 import type { AxiosResponse } from 'axios'
 import request from '../utils/request'
-import type { ApiResponse } from '../types/api'
+import type { CommonResult } from '../types/api'
 import type { OrganizationResolvedNode, OrganizationTreeNode } from '../types/unit'
 
-const getRequiredData = <T>(response: AxiosResponse<ApiResponse<T>>) => {
-  if (response.data.data === undefined) {
+const getRequiredData = <T>(response: AxiosResponse<CommonResult<T>>) => {
+  if (response.data.result === undefined) {
     throw new Error(response.data.message || '响应数据为空')
   }
 
-  return response.data.data
+  return response.data.result
 }
 
 export const getOrganizationTree = async () => {
-  const response = await request.get<ApiResponse<OrganizationTreeNode[]>>(
+  const response = await request.get<CommonResult<OrganizationTreeNode[]>>(
     '/api/msg/organization/tree',
   )
 
@@ -20,7 +20,7 @@ export const getOrganizationTree = async () => {
 }
 
 export const getOrganizationTreeChildren = async (parentOrgId?: string) => {
-  const response = await request.get<ApiResponse<OrganizationTreeNode[]>>(
+  const response = await request.get<CommonResult<OrganizationTreeNode[]>>(
     '/api/msg/organization/tree/children',
     {
       params: parentOrgId ? { parentOrgId } : undefined,
@@ -31,7 +31,7 @@ export const getOrganizationTreeChildren = async (parentOrgId?: string) => {
 }
 
 export const resolveOrganizations = async (orgIds: string[]) => {
-  const response = await request.post<ApiResponse<OrganizationResolvedNode[]>>(
+  const response = await request.post<CommonResult<OrganizationResolvedNode[]>>(
     '/api/msg/organization/tree/resolve',
     { orgIds },
   )
@@ -40,7 +40,7 @@ export const resolveOrganizations = async (orgIds: string[]) => {
 }
 
 export const searchOrganizations = async (keyword: string) => {
-  const response = await request.get<ApiResponse<OrganizationTreeNode[]>>(
+  const response = await request.get<CommonResult<OrganizationTreeNode[]>>(
     '/api/msg/organization/search',
     { params: { keyword } },
   )

@@ -1,6 +1,6 @@
 import type { AxiosResponse } from 'axios'
 import request from '../utils/request'
-import type { ApiResponse } from '../types/api'
+import type { CommonResult } from '../types/api'
 import type {
   TemplateCopyForm,
   TemplateCopyResult,
@@ -20,12 +20,12 @@ import type {
 
 type RequestParams = Record<string, string>
 
-const getRequiredData = <T>(response: AxiosResponse<ApiResponse<T>>) => {
-  if (response.data.data === undefined) {
+const getRequiredData = <T>(response: AxiosResponse<CommonResult<T>>) => {
+  if (response.data.result === undefined) {
     throw new Error(response.data.message || '响应数据为空')
   }
 
-  return response.data.data
+  return response.data.result
 }
 
 const buildTemplateListParams = (query: TemplateQuery) => {
@@ -62,7 +62,7 @@ const buildTemplateListParams = (query: TemplateQuery) => {
 }
 
 export const getTemplateList = async (query: TemplateQuery) => {
-  const response = await request.get<ApiResponse<TemplatePageData>>('/api/msg/template/list', {
+  const response = await request.get<CommonResult<TemplatePageData>>('/api/msg/template/list', {
     params: buildTemplateListParams(query),
   })
 
@@ -70,13 +70,13 @@ export const getTemplateList = async (query: TemplateQuery) => {
 }
 
 export const getTemplateDetail = async (id: string) => {
-  const response = await request.get<ApiResponse<TemplateDetail>>(`/api/msg/template/${id}`)
+  const response = await request.get<CommonResult<TemplateDetail>>(`/api/msg/template/${id}`)
 
   return getRequiredData(response)
 }
 
 export const getTemplateToolbox = async (id: string) => {
-  const response = await request.get<ApiResponse<TemplateToolboxData>>(
+  const response = await request.get<CommonResult<TemplateToolboxData>>(
     `/api/msg/template/${id}/toolbox`,
   )
 
@@ -84,7 +84,7 @@ export const getTemplateToolbox = async (id: string) => {
 }
 
 export const saveTemplateContent = async (id: string, form: TemplateContentSaveForm) => {
-  const response = await request.put<ApiResponse<TemplateContentSaveResult>>(
+  const response = await request.put<CommonResult<TemplateContentSaveResult>>(
     `/api/msg/template/${id}/content`,
     form,
   )
@@ -93,7 +93,7 @@ export const saveTemplateContent = async (id: string, form: TemplateContentSaveF
 }
 
 export const getTemplateReferences = async (id: string) => {
-  const response = await request.get<ApiResponse<TemplateReferenceItem[]>>(
+  const response = await request.get<CommonResult<TemplateReferenceItem[]>>(
     `/api/msg/template/${id}/references`,
   )
 
@@ -101,7 +101,7 @@ export const getTemplateReferences = async (id: string) => {
 }
 
 export const getTemplateReferenceDetail = async (id: string, referenceId: string) => {
-  const response = await request.get<ApiResponse<TemplateReferenceDetail>>(
+  const response = await request.get<CommonResult<TemplateReferenceDetail>>(
     `/api/msg/template/${id}/references/${referenceId}`,
   )
 
@@ -109,7 +109,7 @@ export const getTemplateReferenceDetail = async (id: string, referenceId: string
 }
 
 export const previewTemplate = async (form: TemplatePreviewForm) => {
-  const response = await request.post<ApiResponse<TemplatePreviewResult>>(
+  const response = await request.post<CommonResult<TemplatePreviewResult>>(
     '/api/msg/template/preview',
     form,
   )
@@ -118,29 +118,29 @@ export const previewTemplate = async (form: TemplatePreviewForm) => {
 }
 
 export const createTemplate = async (form: TemplateCreateForm) => {
-  const response = await request.post<ApiResponse<TemplateDetail>>('/api/msg/template', form)
+  const response = await request.post<CommonResult<TemplateDetail>>('/api/msg/template', form)
 
   return getRequiredData(response)
 }
 
 export const updateTemplate = async (id: string, form: TemplateUpdateForm) => {
-  const response = await request.put<ApiResponse<TemplateDetail>>(`/api/msg/template/${id}`, form)
+  const response = await request.put<CommonResult<TemplateDetail>>(`/api/msg/template/${id}`, form)
 
   return getRequiredData(response)
 }
 
 export const deleteTemplate = async (id: string) => {
-  await request.delete<ApiResponse<object>>(`/api/msg/template/${id}`)
+  await request.delete<CommonResult<object>>(`/api/msg/template/${id}`)
 }
 
 export const toggleTemplateStatus = async (id: string) => {
-  const response = await request.put<ApiResponse<TemplateDetail>>(`/api/msg/template/${id}/toggle`)
+  const response = await request.put<CommonResult<TemplateDetail>>(`/api/msg/template/${id}/toggle`)
 
   return getRequiredData(response)
 }
 
 export const copyTemplate = async (id: string, form: TemplateCopyForm) => {
-  const response = await request.post<ApiResponse<TemplateCopyResult>>(
+  const response = await request.post<CommonResult<TemplateCopyResult>>(
     `/api/msg/template/${id}/copy`,
     form,
   )
