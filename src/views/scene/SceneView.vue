@@ -9,6 +9,7 @@ import {
   deleteScene,
   getSceneDetail,
   getSceneList,
+  getSceneOverview,
   updateScene,
 } from '../../api/scene'
 import type {
@@ -115,21 +116,7 @@ const fetchOverview = async () => {
   overviewLoading.value = true
 
   try {
-    const pageSize = 100
-    const firstPage = await getSceneList({ pageNum: 1, pageSize })
-    const allScenes = [...(firstPage.list || [])]
-    const pageCount = Math.ceil(firstPage.total / pageSize)
-
-    for (let pageNum = 2; pageNum <= pageCount; pageNum += 1) {
-      const nextPage = await getSceneList({ pageNum, pageSize })
-      allScenes.push(...(nextPage.list || []))
-    }
-
-    overview.total = firstPage.total
-    overview.activeCount = allScenes.filter((scene) => scene.status === 1).length
-    overview.paramTotal = allScenes.reduce((sum, scene) => sum + scene.paramCount, 0)
-    overview.templateTotal = allScenes.reduce((sum, scene) => sum + scene.templateCount, 0)
-    overview.associatedSceneCount = allScenes.filter((scene) => scene.templateCount > 0).length
+    Object.assign(overview, await getSceneOverview())
   } catch {
     overview.total = 0
     overview.activeCount = 0

@@ -1,6 +1,6 @@
 import axios, { type AxiosResponse } from 'axios'
 import request from '../utils/request'
-import type { CommonResult } from '../types/api'
+import type { CommonResult, FilterOption } from '../types/api'
 import type {
   MessageRecordDetail,
   MessageRecordOverview,
@@ -8,6 +8,7 @@ import type {
   MessageRecordQuery,
   MessageRecordResendLogVO,
   MessageResendResult,
+  RecordFilterOptionsQuery,
 } from '../types/record'
 
 type RequestParams = Record<string, string | number>
@@ -84,6 +85,15 @@ export const getRecordList = async (params: MessageRecordQuery) => {
   const response = await request.get<CommonResult<MessageRecordPageData>>('/api/msg/record/list', {
     params: buildRecordParams(params, true),
   })
+  return getRequiredData(response)
+}
+
+export const getRecordFilterOptions = async (params: RecordFilterOptionsQuery) => {
+  const response = await request.get<CommonResult<FilterOption[]>>(
+    '/api/msg/record/filter-options',
+    { params },
+  )
+
   return getRequiredData(response)
 }
 

@@ -1,24 +1,16 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { reactive, ref, watch } from 'vue'
 import { Refresh, Search } from '@element-plus/icons-vue'
-import { getChannelList } from '../../../api/channel'
-import { getSceneList } from '../../../api/scene'
-import { getTemplateList } from '../../../api/template'
+import { getRecordFilterOptions } from '../../../api/record'
 import UnitTreeSelect from '../../../components/business/UnitTreeSelect.vue'
-import {
-  CHANNEL_TYPE_OPTIONS,
-  type ChannelItem,
-  type ChannelType,
-} from '../../../types/channel'
+import { CHANNEL_TYPE_OPTIONS, type ChannelType } from '../../../types/channel'
+import type { FilterOption } from '../../../types/api'
 import {
   messagePriorityOptions,
   type MessagePriority,
   type PushMode,
 } from '../../../types/push'
 import type { MessageRecordQuery } from '../../../types/record'
-import type { SceneItem } from '../../../types/scene'
-import type { TemplateListItem } from '../../../types/template'
-import type { UnitTreeNode } from '../../../types/unit'
 
 interface RecordFilterModel {
   msgId: string
@@ -45,12 +37,15 @@ const emit = defineEmits<{
   reset: []
 }>()
 
-const optionsLoading = ref(false)
-const unitTreeLoading = ref(false)
-const scenes = ref<SceneItem[]>([])
-const channels = ref<ChannelItem[]>([])
-const templates = ref<TemplateListItem[]>([])
-const unitTree = ref<UnitTreeNode[]>([])
+const scenes = ref<FilterOption[]>([])
+const sceneLoading = ref(false)
+const sceneLoaded = ref(false)
+const channels = ref<FilterOption[]>([])
+const channelLoading = ref(false)
+const channelLoaded = ref(false)
+const templates = ref<FilterOption[]>([])
+const templateLoading = ref(false)
+const templateLoaded = ref(false)
 
 const form = reactive<RecordFilterModel>({
   msgId: '',
@@ -68,20 +63,12 @@ const form = reactive<RecordFilterModel>({
   endDate: '',
 })
 
-const availableChannels = computed(() => {
-  if (!form.channelType) {
-    return []
-  }
-
-  return channels.value.filter((item) => item.channelType === form.channelType)
-})
-
 watch(
   () => form.channelType,
   () => {
-    if (!availableChannels.value.some((item) => item.id === form.channelId)) {
-      form.channelId = ''
-    }
+    form.channelId = ''
+    channels.value = []
+    channelLoaded.value = false
   },
 )
 
@@ -94,12 +81,10 @@ const buildPayload = (): Partial<MessageRecordQuery> => {
   if (form.channelType) payload.channelType = form.channelType
   if (form.channelId) {
     payload.channelId = form.channelId
-    payload.channelName =
-      availableChannels.value.find((item) => item.id === form.channelId)?.channelName
   }
   if (form.templateId) {
     payload.templateId = form.templateId
-    payload.templateName = templates.value.find((item) => item.id === form.templateId)?.templateName
+    payload.templateName = templates.value.find((item) => item.value === form.templateId)?.label
   }
   if (form.sendStatus) payload.sendStatus = form.sendStatus
   if (form.userId.trim()) payload.userId = form.userId.trim()
@@ -136,28 +121,66 @@ const reset = () => {
   emit('reset')
 }
 
-const loadOptions = async () => {
-  optionsLoading.value = true
+const loadSceneOptions = async (visible: boolean) => {
+  if (!visible || sceneLoaded.value || sceneLoading.value) {
+    return
+  }
 
+  sceneLoading.value = true
   try {
-    const [sceneResult, channelResult, templateResult] = await Promise.allSettled([
-      getSceneList({ pageNum: 1, pageSize: 100 }),
-      getChannelList({ pageNum: 1, pageSize: 100 }),
-      getTemplateList({ pageNum: '1', pageSize: '100' }),
-    ])
-
-    scenes.value = sceneResult.status === 'fulfilled' ? sceneResult.value.list || [] : []
-    channels.value = channelResult.status === 'fulfilled' ? channelResult.value.list || [] : []
-    templates.value =
-      templateResult.status === 'fulfilled' ? templateResult.value.list || [] : []
+    scenes.value = await getRecordFilterOptions({ type: 'scene' })
+    sceneLoaded.value = true
+  } catch {
+    scenes.value = []
   } finally {
-    optionsLoading.value = false
+    sceneLoading.value = false
   }
 }
 
-onMounted(() => {
-  loadOptions()
-})
+const loadChannelOptions = async (visible: boolean) => {
+  if (!visible || channelLoaded.value || channelLoading.value) {
+    return
+  }
+
+  const requestedChannelType = form.channelType
+  channelLoading.value = true
+  try {
+    const options = await getRecordFilterOptions({
+      type: 'channel',
+      ...(requestedChannelType ? { channelType: requestedChannelType } : {}),
+    })
+
+    if (form.channelType !== requestedChannelType) {
+      return
+    }
+
+    channels.value = options
+    channelLoaded.value = true
+  } catch {
+    if (form.channelType === requestedChannelType) {
+      channels.value = []
+      channelLoaded.value = false
+    }
+  } finally {
+    channelLoading.value = false
+  }
+}
+
+const loadTemplateOptions = async (visible: boolean) => {
+  if (!visible || templateLoaded.value || templateLoading.value) {
+    return
+  }
+
+  templateLoading.value = true
+  try {
+    templates.value = await getRecordFilterOptions({ type: 'template' })
+    templateLoaded.value = true
+  } catch {
+    templates.value = []
+  } finally {
+    templateLoading.value = false
+  }
+}
 </script>
 
 <template>
@@ -174,15 +197,16 @@ onMounted(() => {
           v-model="form.sceneCode"
           clearable
           filterable
-          :loading="optionsLoading"
+          :loading="sceneLoading"
           placeholder="全部场景"
+          @visible-change="loadSceneOptions"
         >
           <el-option label="全部场景" value="" />
           <el-option
             v-for="item in scenes"
-            :key="item.id"
-            :label="item.sceneName"
-            :value="item.sceneCode"
+            :key="item.value"
+            :label="item.label"
+            :value="item.value"
           />
         </el-select>
       </el-form-item>
@@ -203,15 +227,16 @@ onMounted(() => {
           clearable
           filterable
           :disabled="!form.channelType"
-          :loading="optionsLoading"
+          :loading="channelLoading"
           placeholder="全部渠道"
+          @visible-change="loadChannelOptions"
         >
           <el-option label="全部渠道" value="" />
           <el-option
-            v-for="item in availableChannels"
-            :key="item.id"
-            :label="item.channelName"
-            :value="item.id"
+            v-for="item in channels"
+            :key="item.value"
+            :label="item.label"
+            :value="item.value"
           />
         </el-select>
       </el-form-item>
@@ -220,15 +245,16 @@ onMounted(() => {
           v-model="form.templateId"
           clearable
           filterable
-          :loading="optionsLoading"
+          :loading="templateLoading"
           placeholder="全部模板"
+          @visible-change="loadTemplateOptions"
         >
           <el-option label="全部模板" value="" />
           <el-option
             v-for="item in templates"
-            :key="item.id"
-            :label="item.templateName || item.id"
-            :value="item.id"
+            :key="item.value"
+            :label="item.label"
+            :value="item.value"
           />
         </el-select>
       </el-form-item>
@@ -247,8 +273,6 @@ onMounted(() => {
       <el-form-item>
         <UnitTreeSelect
           v-model="form.userOrgId"
-          :data="unitTree"
-          :loading="unitTreeLoading"
           placeholder="全部接收单位"
         />
       </el-form-item>

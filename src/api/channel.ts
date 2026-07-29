@@ -4,6 +4,7 @@ import type { CommonResult } from '../types/api'
 import type {
   ChannelCreateForm,
   ChannelItem,
+  ChannelOverview,
   ChannelPageData,
   ChannelQuery,
   ChannelUpdateForm,
@@ -48,6 +49,12 @@ export const getChannelList = async (query: ChannelQuery) => {
   const response = await request.get<CommonResult<ChannelPageData>>('/api/msg/channel/list', {
     params: buildChannelListParams(query),
   })
+
+  return getRequiredData(response)
+}
+
+export const getChannelOverview = async () => {
+  const response = await request.get<CommonResult<ChannelOverview>>('/api/msg/channel/overview')
 
   return getRequiredData(response)
 }

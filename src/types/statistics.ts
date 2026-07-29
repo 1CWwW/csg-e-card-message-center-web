@@ -8,6 +8,8 @@ export type StatisticsExportScope = 'CURRENT' | 'ALL'
 
 export type MessageCallType = 'SYNC' | 'ASYNC'
 
+export type StatisticsFilterOptionType = 'scene' | 'template'
+
 export interface StatisticsQuery {
   startTime?: string
   endTime?: string

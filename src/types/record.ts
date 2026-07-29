@@ -33,6 +33,13 @@ export interface MessageRecordQuery {
   endTime?: string
 }
 
+export type RecordFilterOptionType = 'scene' | 'channel' | 'template'
+
+export interface RecordFilterOptionsQuery {
+  type: RecordFilterOptionType
+  channelType?: ChannelType
+}
+
 export interface MessageRecordListItem {
   id: string
   msgId: string

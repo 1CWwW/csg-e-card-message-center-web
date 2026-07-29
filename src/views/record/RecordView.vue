@@ -93,7 +93,9 @@ const enrichRecordOrganizations = async <T extends MessageRecordListItem>(rows: 
   }
 
   try {
-    const resolvedUnits = await resolveUnitNodes(missingOrgIds)
+    const resolvedUnits = await resolveUnitNodes(missingOrgIds, {
+      suppressErrorMessage: true,
+    })
     const unitNameMap = new Map(resolvedUnits.map((unit) => [unit.unitId, unit.unitName]))
 
     return rows.map((row) => ({
@@ -117,13 +119,8 @@ const fetchRecordList = async () => {
       return
     }
 
-    const enrichedList = await enrichRecordOrganizations(pageData.list || [])
-
-    if (requestSequence !== listRequestSequence) {
-      return
-    }
-
-    recordList.value = enrichedList
+    const currentRows = pageData.list || []
+    recordList.value = currentRows
     total.value = pageData.total ?? 0
 
     const maxPage = Math.max(1, Math.ceil(total.value / query.pageSize))
@@ -131,6 +128,7 @@ const fetchRecordList = async () => {
     if (query.pageNum > maxPage) {
       query.pageNum = maxPage
       await fetchRecordList()
+      return
     }
   } catch {
     if (requestSequence !== listRequestSequence) {

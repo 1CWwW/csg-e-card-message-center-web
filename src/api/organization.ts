@@ -1,7 +1,9 @@
-import type { AxiosResponse } from 'axios'
+import type { AxiosRequestConfig, AxiosResponse } from 'axios'
 import request from '../utils/request'
-import type { CommonResult } from '../types/api'
+import type { CommonResult, RequestFeedbackOptions } from '../types/api'
 import type { OrganizationResolvedNode, OrganizationTreeNode } from '../types/unit'
+
+const organizationRequestTimeout = 30000
 
 const getRequiredData = <T>(response: AxiosResponse<CommonResult<T>>) => {
   if (response.data.result === undefined) {
@@ -14,6 +16,7 @@ const getRequiredData = <T>(response: AxiosResponse<CommonResult<T>>) => {
 export const getOrganizationTree = async () => {
   const response = await request.get<CommonResult<OrganizationTreeNode[]>>(
     '/api/msg/organization/tree',
+    { timeout: organizationRequestTimeout },
   )
 
   return getRequiredData(response)
@@ -23,6 +26,7 @@ export const getOrganizationTreeChildren = async (parentOrgId?: string) => {
   const response = await request.get<CommonResult<OrganizationTreeNode[]>>(
     '/api/msg/organization/tree/children',
     {
+      timeout: organizationRequestTimeout,
       params: parentOrgId ? { parentOrgId } : undefined,
     },
   )
@@ -30,10 +34,18 @@ export const getOrganizationTreeChildren = async (parentOrgId?: string) => {
   return getRequiredData(response)
 }
 
-export const resolveOrganizations = async (orgIds: string[]) => {
+export const resolveOrganizations = async (
+  orgIds: string[],
+  options?: RequestFeedbackOptions,
+) => {
+  const config: AxiosRequestConfig & RequestFeedbackOptions = {
+    timeout: organizationRequestTimeout,
+    ...options,
+  }
   const response = await request.post<CommonResult<OrganizationResolvedNode[]>>(
     '/api/msg/organization/tree/resolve',
     { orgIds },
+    config,
   )
 
   return getRequiredData(response)
@@ -42,7 +54,10 @@ export const resolveOrganizations = async (orgIds: string[]) => {
 export const searchOrganizations = async (keyword: string) => {
   const response = await request.get<CommonResult<OrganizationTreeNode[]>>(
     '/api/msg/organization/search',
-    { params: { keyword } },
+    {
+      timeout: organizationRequestTimeout,
+      params: { keyword },
+    },
   )
 
   return getRequiredData(response)

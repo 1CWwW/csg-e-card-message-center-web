@@ -36,6 +36,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   search: [query: TemplateSearchPayload]
   reset: []
+  'scene-visible-change': [visible: boolean]
 }>()
 
 const searchForm = reactive<TemplateSearchModel>({
@@ -116,15 +117,14 @@ const resetSearch = () => {
           filterable
           :loading="sceneLoading"
           placeholder="全部场景"
+          @visible-change="emit('scene-visible-change', $event)"
         >
           <el-option
             v-for="scene in scenes"
-            :key="scene.id"
-            :label="`${scene.sceneCode} - ${scene.sceneName}`"
-            :value="scene.id"
-          >
-            <span>{{ scene.sceneCode }} - {{ scene.sceneName }}</span>
-          </el-option>
+            :key="scene.value"
+            :label="scene.label"
+            :value="scene.value"
+          />
         </el-select>
       </el-form-item>
       <el-form-item>

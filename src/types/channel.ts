@@ -46,6 +46,13 @@ export interface ChannelPageData {
   total: number
 }
 
+export interface ChannelOverview {
+  smsCount: number
+  emailCount: number
+  elinkCount: number
+  inAppCount: number
+}
+
 export interface ChannelCreateForm {
   channelName: string
   channelType: ChannelType

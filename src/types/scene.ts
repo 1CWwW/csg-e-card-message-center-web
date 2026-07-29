@@ -76,6 +76,14 @@ export interface ScenePageData {
   total: number
 }
 
+export interface SceneOverview {
+  total: number
+  activeCount: number
+  paramTotal: number
+  templateTotal: number
+  associatedSceneCount: number
+}
+
 export const getSceneModuleLabel = (module: string, moduleDesc?: string) => {
   if (moduleDesc) {
     return moduleDesc

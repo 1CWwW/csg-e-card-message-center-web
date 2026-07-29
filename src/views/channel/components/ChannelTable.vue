@@ -76,7 +76,7 @@ const isAllUnits = (row: ChannelItem) => (row.unitCount ?? 0) === 0
         </span>
       </template>
     </el-table-column>
-    <el-table-column class-name="channel-table__config-cell" label="类型参数" show-overflow-tooltip>
+    <el-table-column label="类型参数" show-overflow-tooltip>
       <template #default="{ row }">
         {{ getTypeConfigSummary(row) }}
       </template>
@@ -153,11 +153,6 @@ const isAllUnits = (row: ChannelItem) => (row.unitCount ?? 0) === 0
 
   :deep(.channel-table__name-cell .cell) {
     padding-left: 24px;
-    color: var(--app-text-primary);
-  }
-
-  :deep(.channel-table__config-cell .cell) {
-    color: var(--app-text-primary);
   }
 
   :deep(.el-scrollbar__bar.is-horizontal) {

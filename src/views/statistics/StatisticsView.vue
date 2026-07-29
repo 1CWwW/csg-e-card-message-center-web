@@ -3,17 +3,16 @@ import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { Search, UploadFilled } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { getRecordOverview } from '../../api/record'
-import { getSceneList } from '../../api/scene'
 import {
   exportStatistics,
   getChannelStatistics,
   getSceneStatistics,
+  getStatisticsFilterOptions,
   getStatisticsOverview,
   getTemplateStatistics,
   getTimeStatistics,
   getUnitStatistics,
 } from '../../api/statistics'
-import { getTemplateList } from '../../api/template'
 import UnitTreeSelect from '../../components/business/UnitTreeSelect.vue'
 import {
   getUnitTree,
@@ -25,8 +24,7 @@ import {
   getChannelTypeLabel,
   type ChannelType,
 } from '../../types/channel'
-import type { SceneItem } from '../../types/scene'
-import type { TemplateListItem } from '../../types/template'
+import type { FilterOption } from '../../types/api'
 import type { MessageRecordOverview } from '../../types/record'
 import type { UnitTreeNode } from '../../types/unit'
 import type {
@@ -48,16 +46,6 @@ type StatisticsTab = StatisticsDimension
 type ViewMode = 'chart' | 'table'
 type DateRange = [string, string]
 
-interface StatisticsFilterOption {
-  label: string
-  value: string
-}
-
-interface PageResult<T> {
-  list?: T[]
-  total?: number
-}
-
 interface TabState<T> {
   loading: boolean
   error: string
@@ -78,8 +66,6 @@ const granularityOptions: Array<{ label: string; value: StatisticsGranularity }>
   { label: '月', value: 'MONTH' },
 ]
 
-const optionPageSize = 100
-const maxOptionPages = 100
 const tableHeaderStyle = {
   background: '#eef5ff',
   color: '#1f2d3d',
@@ -97,11 +83,14 @@ const recordOverviewLoading = ref(false)
 const overviewError = ref('')
 const exporting = ref(false)
 const refreshing = ref(false)
-const sceneOptions = ref<StatisticsFilterOption[]>([])
-const templateOptions = ref<StatisticsFilterOption[]>([])
+const sceneOptions = ref<FilterOption[]>([])
+const sceneOptionsLoading = ref(false)
+const sceneOptionsLoaded = ref(false)
+const templateOptions = ref<FilterOption[]>([])
+const templateOptionsLoading = ref(false)
+const templateOptionsLoaded = ref(false)
 const unitTree = ref<UnitTreeNode[]>([])
 const unitTreeLoading = ref(false)
-const optionLoading = ref(false)
 
 const filters = reactive({
   channelTypes: [] as ChannelType[],
@@ -477,63 +466,36 @@ async function handleExport(scope: StatisticsExportScope) {
   }
 }
 
-async function loadAllPages<T>(
-  fetchPage: (pageNum: number, pageSize: number) => Promise<PageResult<T>>,
-) {
-  let pageNum = 1
-  let total = 0
-  const result: T[] = []
-
-  while ((pageNum === 1 || result.length < total) && pageNum <= maxOptionPages) {
-    const page = await fetchPage(pageNum, optionPageSize)
-    const records = page.list ?? []
-    result.push(...records)
-    total = page.total ?? result.length
-
-    if (records.length === 0) {
-      break
-    }
-
-    pageNum += 1
+async function loadSceneOptions(visible: boolean) {
+  if (!visible || sceneOptionsLoaded.value || sceneOptionsLoading.value) {
+    return
   }
 
-  return result
+  sceneOptionsLoading.value = true
+  try {
+    sceneOptions.value = await getStatisticsFilterOptions('scene')
+    sceneOptionsLoaded.value = true
+  } catch {
+    sceneOptions.value = []
+  } finally {
+    sceneOptionsLoading.value = false
+  }
 }
 
-async function loadAllSceneOptions() {
-  const list = await loadAllPages<SceneItem>((pageNum, pageSize) => {
-    return getSceneList({ pageNum, pageSize })
-  })
-  const sceneMap = new Map<string, StatisticsFilterOption>()
+async function loadTemplateOptions(visible: boolean) {
+  if (!visible || templateOptionsLoaded.value || templateOptionsLoading.value) {
+    return
+  }
 
-  list.forEach((scene) => {
-    const sceneId = scene.id
-    if (sceneId && !sceneMap.has(sceneId)) {
-      sceneMap.set(sceneId, {
-        label: scene.sceneName || scene.sceneCode || sceneId,
-        value: sceneId,
-      })
-    }
-  })
-  sceneOptions.value = Array.from(sceneMap.values())
-}
-
-async function loadAllTemplateOptions() {
-  const list = await loadAllPages<TemplateListItem>((pageNum, pageSize) => {
-    return getTemplateList({ pageNum: `${pageNum}`, pageSize: `${pageSize}` })
-  })
-  const templateMap = new Map<string, StatisticsFilterOption>()
-
-  list.forEach((template) => {
-    const templateId = template.id
-    if (templateId && !templateMap.has(templateId)) {
-      templateMap.set(templateId, {
-        label: template.templateName || templateId,
-        value: templateId,
-      })
-    }
-  })
-  templateOptions.value = Array.from(templateMap.values())
+  templateOptionsLoading.value = true
+  try {
+    templateOptions.value = await getStatisticsFilterOptions('template')
+    templateOptionsLoaded.value = true
+  } catch {
+    templateOptions.value = []
+  } finally {
+    templateOptionsLoading.value = false
+  }
 }
 
 async function loadUnitTreeOptions() {
@@ -553,28 +515,7 @@ async function loadUnitTreeOptions() {
   }
 }
 
-async function loadFilterOptions() {
-  optionLoading.value = true
-
-  try {
-    const [sceneResult, templateResult] = await Promise.allSettled([
-      loadAllSceneOptions(),
-      loadAllTemplateOptions(),
-    ])
-
-    if (sceneResult.status === 'rejected') {
-      sceneOptions.value = []
-    }
-
-    if (templateResult.status === 'rejected') {
-      templateOptions.value = []
-    }
-  } finally {
-    optionLoading.value = false
-  }
-}
-
-function getSceneLabel(scene: SceneItem | SceneStatisticsItem | TemplateStatisticsItem) {
+function getSceneLabel(scene: SceneStatisticsItem | TemplateStatisticsItem) {
   return scene.sceneName || scene.sceneCode || '-'
 }
 
@@ -1089,7 +1030,6 @@ watch(viewMode, async () => {
 })
 
 onMounted(() => {
-  loadFilterOptions()
   loadCurrentData()
 })
 </script>
@@ -1197,7 +1137,8 @@ onMounted(() => {
               clearable
               collapse-tags
               collapse-tags-tooltip
-              :loading="optionLoading"
+              :loading="sceneOptionsLoading"
+              @visible-change="loadSceneOptions"
             >
               <el-option
                 v-for="scene in sceneOptions"
@@ -1229,7 +1170,8 @@ onMounted(() => {
               clearable
               collapse-tags
               collapse-tags-tooltip
-              :loading="optionLoading"
+              :loading="templateOptionsLoading"
+              @visible-change="loadTemplateOptions"
             >
               <el-option
                 v-for="template in templateOptions"

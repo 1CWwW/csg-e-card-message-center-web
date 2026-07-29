@@ -9,10 +9,11 @@ import {
   deleteTemplate,
   getTemplateDetail,
   getTemplateList,
+  getTemplateOverview,
+  getTemplateSceneOptions,
   toggleTemplateStatus,
   updateTemplate,
 } from '../../api/template'
-import { getSceneList } from '../../api/scene'
 import { resolveUnitNodes } from '../../services/unit-tree-service'
 import type {
   TemplateCopyForm,
@@ -64,6 +65,7 @@ const unitDetailLoading = ref(false)
 
 const sceneOptions = ref<TemplateSceneOption[]>([])
 const sceneLoading = ref(false)
+const sceneLoaded = ref(false)
 const unitTree = ref<UnitTreeNode[]>([])
 const unitTreeLoading = ref(false)
 
@@ -145,27 +147,7 @@ const fetchOverview = async () => {
   overviewLoading.value = true
 
   try {
-    const pageSize = 100
-    const firstPage = await getTemplateList({
-      pageNum: '1',
-      pageSize: String(pageSize),
-    })
-    const allTemplates = [...(firstPage?.list ?? [])]
-    const totalCount = firstPage?.total ?? 0
-    const pageCount = Math.ceil(totalCount / pageSize)
-
-    for (let pageNum = 2; pageNum <= pageCount; pageNum += 1) {
-      const nextPage = await getTemplateList({
-        pageNum: String(pageNum),
-        pageSize: String(pageSize),
-      })
-      allTemplates.push(...(nextPage?.list ?? []))
-    }
-
-    overview.total = totalCount
-    overview.editedCount = allTemplates.filter((template) => template.hasContent === true).length
-    overview.enabledCount = allTemplates.filter((template) => template.status === 1).length
-    overview.pendingCount = allTemplates.filter((template) => template.hasContent !== true).length
+    Object.assign(overview, await getTemplateOverview())
   } catch {
     overview.total = 0
     overview.editedCount = 0
@@ -180,26 +162,16 @@ const refreshTemplatePage = async () => {
   await Promise.all([fetchTemplateList(), fetchOverview()])
 }
 
-const loadSceneOptions = async () => {
+const loadSceneOptions = async (visible: boolean) => {
+  if (!visible || sceneLoaded.value || sceneLoading.value) {
+    return
+  }
+
   sceneLoading.value = true
 
   try {
-    const pageSize = 100
-    const firstPage = await getSceneList({ pageNum: 1, pageSize })
-    const scenes = [...(firstPage.list ?? [])]
-    const pageCount = Math.ceil((firstPage.total ?? 0) / pageSize)
-
-    for (let pageNum = 2; pageNum <= pageCount; pageNum += 1) {
-      const nextPage = await getSceneList({ pageNum, pageSize })
-      scenes.push(...(nextPage.list ?? []))
-    }
-
-    sceneOptions.value = scenes.map((scene) => ({
-      id: scene.id,
-      sceneCode: scene.sceneCode,
-      sceneName: scene.sceneName,
-      status: scene.status,
-    }))
+    sceneOptions.value = await getTemplateSceneOptions()
+    sceneLoaded.value = true
   } catch {
     sceneOptions.value = []
   } finally {
@@ -515,7 +487,6 @@ onMounted(() => {
   }
 
   refreshTemplatePage()
-  loadSceneOptions()
 })
 </script>
 
@@ -561,6 +532,7 @@ onMounted(() => {
       :unit-tree="unitTree"
       :unit-tree-loading="unitTreeLoading"
       :query="searchQuery"
+      @scene-visible-change="loadSceneOptions"
       @search="handleSearch"
       @reset="handleReset"
     />
@@ -615,6 +587,7 @@ onMounted(() => {
       :scene-loading="sceneLoading"
       :unit-tree="unitTree"
       :unit-tree-loading="unitTreeLoading"
+      @scene-visible-change="loadSceneOptions"
       @submit-create="handleCreate"
       @submit-update="handleUpdate"
     />
@@ -628,6 +601,7 @@ onMounted(() => {
       :scene-loading="sceneLoading"
       :unit-tree="unitTree"
       :unit-tree-loading="unitTreeLoading"
+      @scene-visible-change="loadSceneOptions"
       @submit="handleCopy"
     />
 

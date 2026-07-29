@@ -8,12 +8,14 @@ import type {
   TemplateContentSaveResult,
   TemplateCreateForm,
   TemplateDetail,
+  TemplateOverview,
   TemplatePageData,
   TemplatePreviewForm,
   TemplatePreviewResult,
   TemplateQuery,
   TemplateReferenceDetail,
   TemplateReferenceItem,
+  TemplateSceneOption,
   TemplateToolboxData,
   TemplateUpdateForm,
 } from '../types/template'
@@ -65,6 +67,21 @@ export const getTemplateList = async (query: TemplateQuery) => {
   const response = await request.get<CommonResult<TemplatePageData>>('/api/msg/template/list', {
     params: buildTemplateListParams(query),
   })
+
+  return getRequiredData(response)
+}
+
+export const getTemplateOverview = async () => {
+  const response = await request.get<CommonResult<TemplateOverview>>('/api/msg/template/overview')
+
+  return getRequiredData(response)
+}
+
+export const getTemplateSceneOptions = async () => {
+  const response = await request.get<CommonResult<TemplateSceneOption[]>>(
+    '/api/msg/template/filter-options',
+    { params: { type: 'scene' } },
+  )
 
   return getRequiredData(response)
 }

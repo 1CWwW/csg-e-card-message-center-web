@@ -5,6 +5,7 @@ import {
   searchOrganizations,
 } from '../api/organization'
 import { mockUnitTree } from '../mock/unit-tree'
+import type { RequestFeedbackOptions } from '../types/api'
 import type { OrganizationTreeNode, UnitTreeNode } from '../types/unit'
 
 export const isMockUnitTreeEnabled = () => import.meta.env.VITE_USE_MOCK_UNIT_TREE === 'true'
@@ -78,7 +79,10 @@ export const getUnitTreeChildren = async (parentOrgId?: string): Promise<UnitTre
   return request
 }
 
-export const resolveUnitNodes = async (orgIds: string[]): Promise<UnitTreeNode[]> => {
+export const resolveUnitNodes = async (
+  orgIds: string[],
+  options?: RequestFeedbackOptions,
+): Promise<UnitTreeNode[]> => {
   const uniqueOrgIds = Array.from(new Set(orgIds.filter(Boolean)))
   if (!uniqueOrgIds.length) {
     return []
@@ -101,7 +105,7 @@ export const resolveUnitNodes = async (orgIds: string[]): Promise<UnitTreeNode[]
 
   const missingIds = uniqueOrgIds.filter((orgId) => !resolvedUnitCache.has(orgId))
   if (missingIds.length) {
-    const nodes = normalizeUnitTree(await resolveOrganizations(missingIds))
+    const nodes = normalizeUnitTree(await resolveOrganizations(missingIds, options))
     nodes.forEach((node) => resolvedUnitCache.set(node.unitId, node))
   }
 

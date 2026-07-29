@@ -1,16 +1,16 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
-import { getSceneList } from '../../../api/scene'
 import {
   getTemplateDetail,
   getTemplateList,
+  getTemplateSceneOptions,
 } from '../../../api/template'
 import { getChannelTypeLabel } from '../../../types/channel'
-import type { SceneItem } from '../../../types/scene'
 import type {
   TemplateListItem,
   TemplateReferenceDetail,
+  TemplateSceneOption,
 } from '../../../types/template'
 
 const props = defineProps<{
@@ -30,10 +30,11 @@ const query = reactive({
   pageSize: 10,
 })
 const references = ref<TemplateListItem[]>([])
-const sceneOptions = ref<SceneItem[]>([])
+const sceneOptions = ref<TemplateSceneOption[]>([])
 const total = ref(0)
 const loading = ref(false)
 const sceneLoading = ref(false)
+const sceneLoaded = ref(false)
 const loadingId = ref('')
 const loadFailed = ref(false)
 let requestSequence = 0
@@ -53,21 +54,23 @@ const formatDateTime = (value?: string) => {
   return value.replace('T', ' ').slice(0, 19)
 }
 
-const loadScenes = async () => {
-  if (sceneLoading.value) {
+const loadScenes = async (visible: boolean) => {
+  if (!visible || sceneLoaded.value || sceneLoading.value) {
     return
   }
 
   sceneLoading.value = true
 
   try {
-    const page = await getSceneList({
-      pageNum: 1,
-      pageSize: 100,
-    })
+    const options = await getTemplateSceneOptions()
 
     if (!disposed) {
-      sceneOptions.value = page.list ?? []
+      sceneOptions.value = options
+      sceneLoaded.value = true
+    }
+  } catch {
+    if (!disposed) {
+      sceneOptions.value = []
     }
   } finally {
     if (!disposed) {
@@ -174,7 +177,6 @@ watch(
   () => props.modelValue,
   (visible) => {
     if (visible) {
-      loadScenes()
       loadReferences()
     } else {
       requestSequence += 1
@@ -212,12 +214,13 @@ onBeforeUnmount(() => {
         placeholder="筛选场景"
         :loading="sceneLoading"
         @change="resetAndLoad"
+        @visible-change="loadScenes"
       >
         <el-option
           v-for="scene in sceneOptions"
-          :key="scene.id"
-          :label="scene.sceneName"
-          :value="scene.id"
+          :key="scene.value"
+          :label="scene.label"
+          :value="scene.value"
         />
       </el-select>
       <el-button type="primary" @click="resetAndLoad">查询</el-button>

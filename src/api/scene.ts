@@ -6,6 +6,7 @@ import type {
   SceneCreateForm,
   SceneDisableCheckResult,
   SceneItem,
+  SceneOverview,
   ScenePageData,
   SceneQuery,
   SceneUpdateForm,
@@ -50,6 +51,12 @@ export const getSceneList = async (query: SceneQuery) => {
   const response = await request.get<CommonResult<ScenePageData>>('/api/msg/scene/list', {
     params: buildSceneListParams(query),
   })
+
+  return getRequiredData(response)
+}
+
+export const getSceneOverview = async () => {
+  const response = await request.get<CommonResult<SceneOverview>>('/api/msg/scene/overview')
 
   return getRequiredData(response)
 }

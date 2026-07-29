@@ -7,6 +7,7 @@ import {
   deleteChannel,
   getChannelDetail,
   getChannelList,
+  getChannelOverview,
   updateChannel,
 } from '../../api/channel'
 import type {
@@ -93,19 +94,11 @@ const fetchOverview = async () => {
   overviewLoading.value = true
 
   try {
-    const pageSize = 100
-    const firstPage = await getChannelList({ pageNum: 1, pageSize })
-    const allChannels = [...(firstPage.list || [])]
-    const pageCount = Math.ceil(firstPage.total / pageSize)
-
-    for (let pageNum = 2; pageNum <= pageCount; pageNum += 1) {
-      const nextPage = await getChannelList({ pageNum, pageSize })
-      allChannels.push(...(nextPage.list || []))
-    }
-
-    CHANNEL_TYPE_OPTIONS.forEach((item) => {
-      overview[item.value] = allChannels.filter((channel) => channel.channelType === item.value).length
-    })
+    const data = await getChannelOverview()
+    overview.SMS = data.smsCount
+    overview.EMAIL = data.emailCount
+    overview.ELINK = data.elinkCount
+    overview.IN_APP = data.inAppCount
   } catch {
     CHANNEL_TYPE_OPTIONS.forEach((item) => {
       overview[item.value] = 0

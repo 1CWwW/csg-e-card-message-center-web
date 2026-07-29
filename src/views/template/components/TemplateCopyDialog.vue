@@ -35,6 +35,7 @@ const props = withDefaults(
 const emit = defineEmits<{
   'update:modelValue': [value: boolean]
   submit: [form: TemplateCopyForm]
+  'scene-visible-change': [visible: boolean]
 }>()
 
 const formRef = ref<FormInstance>()
@@ -56,7 +57,9 @@ const formRules = reactive<FormRules<TemplateCopyModel>>({
 const fillForm = (source: TemplateDetail) => {
   const sourceName = source.templateName || ''
   formModel.templateName = sourceName ? `${sourceName}_副本`.slice(0, 50) : ''
-  formModel.sceneId = source.sceneId || ''
+  formModel.sceneId = props.scenes.some((scene) => scene.value === source.sceneId)
+    ? source.sceneId || ''
+    : ''
   formModel.copyContent = true
   formModel.unitIds = [...new Set(source.unitIds ?? [])]
 
@@ -77,6 +80,27 @@ watch(
   (visible) => {
     if (visible && props.sourceTemplate) {
       fillForm(props.sourceTemplate)
+    }
+  },
+)
+
+watch(
+  () => props.scenes,
+  (scenes) => {
+    if (!props.modelValue || !props.sourceTemplate) {
+      return
+    }
+
+    if (formModel.sceneId && !scenes.some((scene) => scene.value === formModel.sceneId)) {
+      formModel.sceneId = ''
+      return
+    }
+
+    if (
+      !formModel.sceneId &&
+      scenes.some((scene) => scene.value === props.sourceTemplate?.sceneId)
+    ) {
+      formModel.sceneId = props.sourceTemplate.sceneId || ''
     }
   },
 )
@@ -139,16 +163,14 @@ const submitForm = async () => {
             filterable
             :loading="sceneLoading"
             placeholder="请选择启用场景"
+            @visible-change="emit('scene-visible-change', $event)"
           >
             <el-option
               v-for="scene in scenes"
-              :key="scene.id"
-              :label="scene.sceneName"
-              :value="scene.id"
-            >
-              <span>{{ scene.sceneName }}</span>
-              <small class="template-copy-dialog__option-code">{{ scene.sceneCode }}</small>
-            </el-option>
+              :key="scene.value"
+              :label="scene.label"
+              :value="scene.value"
+            />
           </el-select>
         </el-form-item>
         <el-form-item label="复制模板内容">
@@ -226,4 +248,3 @@ const submitForm = async () => {
   font-weight: 600;
 }
 </style>
-

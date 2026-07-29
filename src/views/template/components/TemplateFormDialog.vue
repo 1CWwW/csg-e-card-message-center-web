@@ -51,6 +51,7 @@ const emit = defineEmits<{
   'update:modelValue': [value: boolean]
   'submit-create': [form: TemplateCreateForm]
   'submit-update': [form: TemplateUpdateForm]
+  'scene-visible-change': [visible: boolean]
 }>()
 
 const formRef = ref<FormInstance>()
@@ -204,15 +205,14 @@ const submitForm = async () => {
               filterable
               :loading="sceneLoading"
               placeholder="搜索场景编码或名称..."
+              @visible-change="emit('scene-visible-change', $event)"
             >
               <el-option
                 v-for="scene in scenes"
-                :key="scene.id"
-                :label="`${scene.sceneCode} - ${scene.sceneName}`"
-                :value="scene.id"
-              >
-                <span>{{ scene.sceneCode }} - {{ scene.sceneName }}</span>
-              </el-option>
+                :key="scene.value"
+                :label="scene.label"
+                :value="scene.value"
+              />
             </el-select>
           </el-form-item>
           <el-form-item label="渠道类型" prop="channelType">

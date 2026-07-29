@@ -9,3 +9,12 @@ export interface ApiErrorPayload {
   message?: string
   msg?: string
 }
+
+export interface RequestFeedbackOptions {
+  suppressErrorMessage?: boolean
+}
+
+export interface FilterOption {
+  value: string
+  label: string
+}

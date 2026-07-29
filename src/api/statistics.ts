@@ -1,11 +1,12 @@
 import type { AxiosResponse } from 'axios'
 import axios from 'axios'
 import request from '../utils/request'
-import type { CommonResult } from '../types/api'
+import type { CommonResult, FilterOption } from '../types/api'
 import type {
   ChannelStatisticsItem,
   SceneStatisticsItem,
   StatisticsExportQuery,
+  StatisticsFilterOptionType,
   StatisticsListResult,
   StatisticsOverview,
   StatisticsQuery,
@@ -123,6 +124,15 @@ export const getStatisticsOverview = async (query: StatisticsQuery) => {
     params: buildStatisticsParams(query),
     paramsSerializer: { serialize: serializeStatisticsParams },
   })
+
+  return getRequiredData(response)
+}
+
+export const getStatisticsFilterOptions = async (type: StatisticsFilterOptionType) => {
+  const response = await request.get<CommonResult<FilterOption[]>>(
+    '/api/msg/statistics/filter-options',
+    { params: { type } },
+  )
 
   return getRequiredData(response)
 }

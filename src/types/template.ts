@@ -1,5 +1,5 @@
-import type { SceneItem } from './scene'
 import type { SceneParamItem } from './scene-param'
+import type { FilterOption } from './api'
 
 export type TemplateStatus = 0 | 1
 export type TemplateQueryStatus = '0' | '1'
@@ -124,6 +124,13 @@ export interface TemplatePageData {
   total?: number
 }
 
+export interface TemplateOverview {
+  total: number
+  editedCount: number
+  enabledCount: number
+  pendingCount: number
+}
+
 export interface TemplateCreateForm {
   templateName: string
   sceneId: string
@@ -151,7 +158,6 @@ export interface TemplateCopyResult {
   hasContent?: boolean
 }
 
-export type TemplateSceneOption = Pick<
-  SceneItem,
-  'id' | 'sceneCode' | 'sceneName' | 'status'
->
+export interface TemplateSceneOption extends FilterOption {
+  status: TemplateStatus
+}
