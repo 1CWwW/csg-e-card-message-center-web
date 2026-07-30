@@ -133,11 +133,11 @@ const unitCountText = computed(() => `${unitItems.value.length} 个单位`)
 }
 
 .channel-unit-detail__type.is-SMS {
-  color: #f97316;
+  color: var(--app-color-warning);
 }
 
 .channel-unit-detail__type.is-EMAIL {
-  color: #2563eb;
+  color: var(--app-color-primary);
 }
 
 .channel-unit-detail__type.is-ELINK {
@@ -145,7 +145,7 @@ const unitCountText = computed(() => `${unitItems.value.length} 个单位`)
 }
 
 .channel-unit-detail__type.is-IN_APP {
-  color: #16a34a;
+  color: var(--app-color-success);
 }
 
 .channel-unit-detail__mock {

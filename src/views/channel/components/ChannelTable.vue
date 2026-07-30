@@ -168,11 +168,11 @@ const isAllUnits = (row: ChannelItem) => (row.unitCount ?? 0) === 0
 }
 
 .channel-table__type.is-SMS {
-  color: #f97316;
+  color: var(--app-color-warning);
 }
 
 .channel-table__type.is-EMAIL {
-  color: #2563eb;
+  color: var(--app-color-primary);
 }
 
 .channel-table__type.is-ELINK {
@@ -180,7 +180,7 @@ const isAllUnits = (row: ChannelItem) => (row.unitCount ?? 0) === 0
 }
 
 .channel-table__type.is-IN_APP {
-  color: #16a34a;
+  color: var(--app-color-success);
 }
 
 .channel-table__unit {

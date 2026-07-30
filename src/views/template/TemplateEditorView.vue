@@ -1456,7 +1456,7 @@ const loadEditor = async () => {
     templateDetail.value = null
     toolboxData.value = null
     loadFailed.value = true
-    loadError.value = readErrorMessage(error, '模板编辑器加载失败，请检查服务后重新加载。')
+    loadError.value = readErrorMessage(error, '模板编辑器暂时无法加载，请稍后重试。')
   } finally {
     loading.value = false
   }
@@ -1970,7 +1970,7 @@ watch(previewExpanded, async () => {
       <el-alert
         v-if="loadFailed"
         class="template-editor-page__load-error"
-        :title="loadError || '模板编辑器加载失败，请检查服务后重新加载。'"
+        :title="loadError || '模板编辑器暂时无法加载，请稍后重试。'"
         type="error"
         show-icon
         :closable="false"

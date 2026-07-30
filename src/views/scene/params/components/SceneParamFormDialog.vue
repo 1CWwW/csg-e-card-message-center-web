@@ -105,7 +105,7 @@ const duplicateNameTip = computed(() => {
     return item.paramName.toLowerCase() === currentName.toLowerCase()
   })
 
-  return duplicated ? '当前列表已存在同名参数，最终以后端校验为准' : ''
+  return duplicated ? '当前列表已存在同名参数，请修改后再试' : ''
 })
 
 const validateParamName = (_rule: unknown, value: string, callback: (error?: Error) => void) => {

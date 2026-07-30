@@ -251,7 +251,7 @@ const formatDateTime = (value: string) => {
 }
 
 .scene-table__status.is-enabled {
-  --el-tag-text-color: #16a34a;
+  --el-tag-text-color: var(--app-color-success);
   --el-tag-bg-color: #dcfce7;
   --el-tag-border-color: #bbf7d0;
 }

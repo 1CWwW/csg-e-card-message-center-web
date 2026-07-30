@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
-import { Search, UploadFilled } from '@element-plus/icons-vue'
+import { UploadFilled } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { getRecordOverview } from '../../api/record'
 import {
@@ -14,11 +14,7 @@ import {
   getUnitStatistics,
 } from '../../api/statistics'
 import UnitTreeSelect from '../../components/business/UnitTreeSelect.vue'
-import {
-  getUnitTree,
-  getUnitTreeUnavailableMessage,
-  resolveUnitNodes,
-} from '../../services/unit-tree-service'
+import { resolveUnitNodes } from '../../services/unit-tree-service'
 import {
   CHANNEL_TYPE_OPTIONS,
   getChannelTypeLabel,
@@ -26,7 +22,6 @@ import {
 } from '../../types/channel'
 import type { FilterOption } from '../../types/api'
 import type { MessageRecordOverview } from '../../types/record'
-import type { UnitTreeNode } from '../../types/unit'
 import type {
   ChannelStatisticsItem,
   SceneStatisticsItem,
@@ -50,6 +45,8 @@ interface TabState<T> {
   loading: boolean
   error: string
   data: T[]
+  pageNum: number
+  pageSize: number
 }
 
 const tabs: Array<{ label: string; value: StatisticsTab }> = [
@@ -89,9 +86,6 @@ const sceneOptionsLoaded = ref(false)
 const templateOptions = ref<FilterOption[]>([])
 const templateOptionsLoading = ref(false)
 const templateOptionsLoaded = ref(false)
-const unitTree = ref<UnitTreeNode[]>([])
-const unitTreeLoading = ref(false)
-
 const filters = reactive({
   channelTypes: [] as ChannelType[],
   sceneIds: [] as string[],
@@ -110,6 +104,11 @@ const tabStates = reactive({
 })
 
 const activeState = computed(() => tabStates[activeTab.value])
+const timeTableRows = computed(() => getPaginatedRows(tabStates.TIME))
+const channelTableRows = computed(() => getPaginatedRows(tabStates.CHANNEL))
+const sceneTableRows = computed(() => getPaginatedRows(tabStates.SCENE))
+const unitTableRows = computed(() => getPaginatedRows(tabStates.UNIT))
+const templateTableRows = computed(() => getPaginatedRows(tabStates.TEMPLATE))
 const canUseChart = computed(() => activeTab.value !== 'TEMPLATE')
 const overviewLoading = computed(() => statisticsOverviewLoading.value || recordOverviewLoading.value)
 const pageLoading = computed(() => overviewLoading.value && tabStates.TIME.loading)
@@ -135,7 +134,14 @@ function createTabState<T>(): TabState<T> {
     loading: false,
     error: '',
     data: [],
+    pageNum: 1,
+    pageSize: 10,
   }
+}
+
+function getPaginatedRows<T>(state: TabState<T>) {
+  const start = (state.pageNum - 1) * state.pageSize
+  return state.data.slice(start, start + state.pageSize)
 }
 
 function toStartTime(date: string) {
@@ -233,49 +239,8 @@ function buildBaseQuery(): StatisticsQuery {
   return { startTime: toStartTime(startTime), endTime: toEndTime(endTime) }
 }
 
-function collectUnitChildren(unitId: string, nodes: UnitTreeNode[], result: Set<string>) {
-  for (const node of nodes) {
-    if (node.unitId === unitId) {
-      result.add(node.unitId)
-      node.children?.forEach((child) => collectAllUnitIds(child, result))
-      return true
-    }
-
-    if (collectUnitChildren(unitId, node.children ?? [], result)) {
-      return true
-    }
-  }
-
-  return false
-}
-
-function collectAllUnitIds(node: UnitTreeNode, result: Set<string>) {
-  result.add(node.unitId)
-  node.children?.forEach((child) => collectAllUnitIds(child, result))
-}
-
-async function getSelectedUnitIds() {
-  const result = new Set<string>()
-
-  if (filters.includeSubUnits && filters.unitIds.length > 0 && unitTree.value.length === 0) {
-    await loadUnitTreeOptions()
-  }
-
-  filters.unitIds.forEach((unitId) => {
-    if (!unitId) {
-      return
-    }
-
-    if (filters.includeSubUnits) {
-      collectUnitChildren(unitId, unitTree.value, result)
-      result.add(unitId)
-      return
-    }
-
-    result.add(unitId)
-  })
-
-  return Array.from(result)
+function getSelectedUnitIds() {
+  return Array.from(new Set(filters.unitIds.filter(Boolean)))
 }
 
 async function buildCurrentTabQuery(): Promise<StatisticsQuery> {
@@ -305,10 +270,11 @@ async function buildCurrentTabQuery(): Promise<StatisticsQuery> {
   }
 
   if (activeTab.value === 'UNIT') {
-    const unitIds = await getSelectedUnitIds()
+    const unitIds = getSelectedUnitIds()
     return {
       ...baseQuery,
       unitIds: unitIds.length > 0 ? unitIds : undefined,
+      includeSubUnits: filters.includeSubUnits,
     }
   }
 
@@ -376,6 +342,9 @@ async function loadActiveTab() {
     } else {
       tabStates.TEMPLATE.data = await getTemplateStatistics(query)
     }
+
+    const maxPage = Math.max(1, Math.ceil(state.data.length / state.pageSize))
+    state.pageNum = Math.min(state.pageNum, maxPage)
   } catch (error) {
     state.error = error instanceof Error ? error.message : '统计数据加载失败'
   } finally {
@@ -394,6 +363,7 @@ async function loadCurrentData() {
 }
 
 async function handleSearch() {
+  activeState.value.pageNum = 1
   await loadActiveTab()
 }
 
@@ -406,7 +376,17 @@ async function handleReset() {
   filters.templateIds = []
   filters.includeSubUnits = true
   filters.granularity = 'DAY'
+  activeState.value.pageNum = 1
   await loadActiveTab()
+}
+
+function handleStatisticsSizeChange(pageSize: number) {
+  activeState.value.pageSize = pageSize
+  activeState.value.pageNum = 1
+}
+
+function handleStatisticsPageChange(pageNum: number) {
+  activeState.value.pageNum = pageNum
 }
 
 async function handleRefresh() {
@@ -418,6 +398,7 @@ async function getExportQuery(scope: StatisticsExportScope) {
 
   return {
     ...baseQuery,
+    ...(activeTab.value === 'UNIT' ? { includeSubUnits: filters.includeSubUnits } : {}),
     dimension: activeTab.value,
     scope,
   }
@@ -495,23 +476,6 @@ async function loadTemplateOptions(visible: boolean) {
     templateOptions.value = []
   } finally {
     templateOptionsLoading.value = false
-  }
-}
-
-async function loadUnitTreeOptions() {
-  if (unitTreeLoading.value || unitTree.value.length > 0) {
-    return
-  }
-
-  unitTreeLoading.value = true
-
-  try {
-    unitTree.value = await getUnitTree()
-  } catch {
-    unitTree.value = []
-    ElMessage.error(getUnitTreeUnavailableMessage())
-  } finally {
-    unitTreeLoading.value = false
   }
 }
 
@@ -1029,8 +993,10 @@ watch(viewMode, async () => {
   unitChartRef.value?.resize()
 })
 
-onMounted(() => {
-  loadCurrentData()
+onMounted(async () => {
+  filters.includeSubUnits = true
+  await nextTick()
+  await loadCurrentData()
 })
 </script>
 
@@ -1154,13 +1120,11 @@ onMounted(() => {
               multiple
               collapse-tags
               collapse-tags-tooltip
-              :data="unitTree"
-              :loading="unitTreeLoading"
               placeholder="请选择单位"
             />
           </el-form-item>
           <el-form-item v-if="activeTab === 'UNIT'" class="statistics-page__sub-unit-option" label=" ">
-            <el-checkbox v-model="filters.includeSubUnits">含子单位</el-checkbox>
+            <el-checkbox v-model="filters.includeSubUnits">包含子单位</el-checkbox>
           </el-form-item>
           <el-form-item v-if="activeTab === 'TEMPLATE'" label="模板">
             <el-select
@@ -1182,7 +1146,7 @@ onMounted(() => {
             </el-select>
           </el-form-item>
           <el-form-item class="statistics-page__filter-actions" label=" ">
-            <el-button type="primary" :icon="Search" :loading="activeState.loading" :disabled="isBusy" @click="handleSearch">
+            <el-button type="primary" :loading="activeState.loading" :disabled="isBusy" @click="handleSearch">
               查询
             </el-button>
             <el-button :disabled="isBusy" @click="handleReset">重置</el-button>
@@ -1233,10 +1197,9 @@ onMounted(() => {
         <template v-else>
           <el-table
             v-if="activeTab === 'TIME'"
-            :data="tabStates.TIME.data"
+            :data="timeTableRows"
             :header-cell-style="tableHeaderStyle"
             empty-text="暂无统计数据"
-            stripe
           >
             <el-table-column prop="periodLabel" label="时间" min-width="160" show-overflow-tooltip />
             <el-table-column label="发送总量" min-width="120" align="right">
@@ -1255,10 +1218,9 @@ onMounted(() => {
 
           <el-table
             v-else-if="activeTab === 'CHANNEL'"
-            :data="tabStates.CHANNEL.data"
+            :data="channelTableRows"
             :header-cell-style="tableHeaderStyle"
             empty-text="暂无统计数据"
-            stripe
           >
             <el-table-column label="渠道类型" min-width="160" show-overflow-tooltip>
               <template #default="{ row }">{{ getChannelName(row) }}</template>
@@ -1279,10 +1241,9 @@ onMounted(() => {
 
           <el-table
             v-else-if="activeTab === 'SCENE'"
-            :data="tabStates.SCENE.data"
+            :data="sceneTableRows"
             :header-cell-style="tableHeaderStyle"
             empty-text="暂无统计数据"
-            stripe
           >
             <el-table-column label="场景名称" min-width="200" show-overflow-tooltip>
               <template #default="{ row }">{{ row.sceneName || row.sceneCode || '-' }}</template>
@@ -1306,10 +1267,9 @@ onMounted(() => {
 
           <el-table
             v-else-if="activeTab === 'UNIT'"
-            :data="tabStates.UNIT.data"
+            :data="unitTableRows"
             :header-cell-style="tableHeaderStyle"
             empty-text="暂无统计数据"
-            stripe
           >
             <el-table-column label="单位名称" min-width="200" show-overflow-tooltip>
               <template #default="{ row }">{{ getUnitDisplayName(row) }}</template>
@@ -1330,10 +1290,9 @@ onMounted(() => {
 
           <el-table
             v-else
-            :data="tabStates.TEMPLATE.data"
+            :data="templateTableRows"
             :header-cell-style="tableHeaderStyle"
             empty-text="暂无统计数据"
-            stripe
           >
             <el-table-column label="模板名称" min-width="180" show-overflow-tooltip>
               <template #default="{ row }">{{ getTemplateName(row) }}</template>
@@ -1357,6 +1316,20 @@ onMounted(() => {
               <template #default="{ row }">{{ formatRate(row.successRate) }}</template>
             </el-table-column>
           </el-table>
+
+          <div class="statistics-page__pagination">
+            <el-pagination
+              background
+              layout="total, prev, pager, next, sizes, jumper"
+              :pager-count="5"
+              :current-page="activeState.pageNum"
+              :page-size="activeState.pageSize"
+              :page-sizes="[10, 20, 50, 100]"
+              :total="activeState.data.length"
+              @size-change="handleStatisticsSizeChange"
+              @current-change="handleStatisticsPageChange"
+            />
+          </div>
         </template>
       </div>
     </section>
@@ -1480,8 +1453,19 @@ onMounted(() => {
     :deep(.el-form-item__content) {
       display: flex;
       flex-wrap: nowrap;
-      gap: 10px;
+      gap: 12px;
     }
+
+    :deep(.el-button) {
+      margin-left: 0;
+    }
+  }
+
+  &__pagination {
+    display: flex;
+    justify-content: flex-end;
+    padding: 12px 16px;
+    border-top: 1px solid #ebeef5;
   }
 
   &__sub-unit-option {

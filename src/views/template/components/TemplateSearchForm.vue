@@ -157,7 +157,7 @@ const resetSearch = () => {
         <el-button class="template-search__submit" type="primary" :loading="loading" @click="submitSearch">
           查询
         </el-button>
-        <el-button class="template-search__reset" text :disabled="loading" @click="resetSearch">
+        <el-button class="template-search__reset" :disabled="loading" @click="resetSearch">
           重置
         </el-button>
       </el-form-item>
@@ -191,13 +191,7 @@ const resetSearch = () => {
 
 .template-search__form {
   display: grid;
-  grid-template-columns:
-    minmax(120px, 1fr)
-    minmax(150px, 1.25fr)
-    minmax(90px, 0.75fr)
-    minmax(90px, 0.75fr)
-    minmax(105px, 0.9fr)
-    auto;
+  grid-template-columns: repeat(5, minmax(0, 1fr)) auto;
   gap: 10px;
   align-items: flex-start;
 }
@@ -210,8 +204,11 @@ const resetSearch = () => {
   :deep(.el-form-item__content) {
     display: flex;
     flex-wrap: nowrap;
-    gap: 14px;
-    min-width: 136px;
+    gap: 12px;
+  }
+
+  :deep(.el-button) {
+    margin-left: 0;
   }
 }
 
@@ -233,28 +230,13 @@ const resetSearch = () => {
 
 @media (max-width: 1480px) {
   .template-search__form {
-    grid-template-columns:
-      minmax(120px, 1fr)
-      minmax(145px, 1.2fr)
-      minmax(90px, 0.75fr)
-      minmax(90px, 0.75fr)
-      minmax(105px, 0.9fr)
-      auto;
+    grid-template-columns: repeat(5, minmax(0, 1fr)) auto;
   }
 }
 
 @media (max-width: 1180px) {
   .template-search__form {
-    display: flex;
-    flex-wrap: wrap;
-
-    > :deep(.el-form-item) {
-      flex: 1 1 160px;
-    }
-
-    > :deep(.el-form-item:nth-child(2)) {
-      flex-basis: 220px;
-    }
+    grid-template-columns: repeat(5, minmax(0, 1fr)) auto;
   }
 }
 </style>

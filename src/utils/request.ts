@@ -52,17 +52,42 @@ const isCommonResult = (value: unknown): value is CommonResult<unknown> => {
   )
 }
 
+const technicalMessagePattern =
+  /后端|前端|服务器|服务状态|数据库|接口|请求失败|网络异常|network error|timeout|exception|stack|sql|http/i
+
+const getFriendlyBusinessMessage = (message: string | undefined) => {
+  if (!message || technicalMessagePattern.test(message)) {
+    return '操作未完成，请稍后重试'
+  }
+
+  return message
+}
+
 const getResponseMessage = (payload: CommonResult<unknown> | ApiErrorPayload) => {
   const fallbackMessage = 'msg' in payload ? payload.msg : undefined
-  return payload.message || fallbackMessage || '请求处理失败'
+  return getFriendlyBusinessMessage(payload.message || fallbackMessage)
 }
 
 const isBusinessSuccess = (payload: CommonResult<unknown>) => {
   return payload.code === 0
 }
 
+let errorMessageVisible = false
+
 const showErrorMessage = (message: string) => {
-  ElMessage({ message, type: 'error', grouping: true })
+  if (errorMessageVisible) {
+    return
+  }
+
+  errorMessageVisible = true
+  ElMessage({
+    message,
+    type: 'error',
+    grouping: false,
+    onClose: () => {
+      errorMessageVisible = false
+    },
+  })
 }
 
 const shouldSuppressErrorMessage = (config: AxiosRequestConfig | undefined) => {
@@ -72,20 +97,38 @@ const shouldSuppressErrorMessage = (config: AxiosRequestConfig | undefined) => {
 
 const getErrorMessage = (error: AxiosError<ApiErrorPayload | CommonResult<unknown>>) => {
   if (error.code === 'ECONNABORTED') {
-    return '请求超时，请稍后重试'
+    return '加载时间较长，请稍后重试'
   }
 
   if (error.response) {
+    const status = error.response.status
+
+    if (status === 401) {
+      return '登录状态已失效，请重新登录'
+    }
+
+    if (status === 403) {
+      return '您暂无权限进行此操作'
+    }
+
+    if (status === 404) {
+      return '暂时无法获取所需内容，请稍后重试'
+    }
+
+    if (status >= 500) {
+      return '系统暂时不可用，请稍后重试'
+    }
+
     const payload = error.response.data
 
     if (payload && isRecord(payload)) {
       return getResponseMessage(payload)
     }
 
-    return `请求失败（${error.response.status}）`
+    return '操作未完成，请稍后重试'
   }
 
-  return '网络异常，请检查后端服务状态'
+  return '当前网络连接不稳定，请检查网络后重试'
 }
 
 service.interceptors.request.use((config) => {
@@ -126,8 +169,11 @@ service.interceptors.response.use(
     return response
   },
   (error: AxiosError<ApiErrorPayload | CommonResult<unknown>>) => {
+    const message = getErrorMessage(error)
+    error.message = message
+
     if (!shouldSuppressErrorMessage(error.config)) {
-      showErrorMessage(getErrorMessage(error))
+      showErrorMessage(message)
     }
     return Promise.reject(error)
   },

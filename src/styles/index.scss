@@ -102,6 +102,162 @@ select {
   border-color: var(--app-border-color);
 }
 
+// 与宿主系统保持一致的表单、按钮和列表视觉规范。
+.el-input__wrapper,
+.el-select__wrapper,
+.el-date-editor.el-input__wrapper {
+  height: 32px !important;
+  min-height: 32px !important;
+  border-radius: var(--app-radius-base) !important;
+  box-shadow: 0 0 0 1px #c8d1dc inset !important;
+}
+
+.el-textarea__inner,
+.el-input-number {
+  border-radius: var(--app-radius-base) !important;
+  box-shadow: 0 0 0 1px #c8d1dc inset !important;
+}
+
+.el-input__wrapper.is-focus,
+.el-select__wrapper.is-focused,
+.el-date-editor.el-input__wrapper.is-active {
+  box-shadow: 0 0 0 1px var(--app-color-primary) inset !important;
+}
+
+.el-select-dropdown,
+.el-picker-panel {
+  border-radius: var(--app-radius-base) !important;
+}
+
+.el-button:not(.is-link):not(.is-text) {
+  width: auto !important;
+  height: 32px !important;
+  min-width: 0 !important;
+  min-height: 32px !important;
+  padding: 8px 15px !important;
+  border-radius: var(--app-radius-base) !important;
+  box-shadow: none !important;
+  font-weight: 400;
+}
+
+.el-button--primary:not(.is-link):not(.is-text) {
+  border-color: var(--app-color-primary) !important;
+  background: var(--app-color-primary) !important;
+  color: #ffffff !important;
+}
+
+.el-button--primary:not(.is-link):not(.is-text):hover,
+.el-button--primary:not(.is-link):not(.is-text):focus {
+  border-color: var(--app-color-primary-dark) !important;
+  background: var(--app-color-primary-dark) !important;
+}
+
+.el-button--primary.is-disabled:not(.is-link):not(.is-text),
+.el-button--primary.is-disabled:not(.is-link):not(.is-text):hover {
+  border-color: var(--el-color-primary-light-5) !important;
+  background: var(--el-color-primary-light-5) !important;
+}
+
+.el-button:not(.el-button--primary):not(.el-button--danger):not(.el-button--success):not(.el-button--warning):not(.el-button--info):not(.is-link):not(.is-text) {
+  border-color: #88a9cf !important;
+  background: #ffffff !important;
+  color: var(--app-color-primary) !important;
+}
+
+.el-button:not(.el-button--primary):not(.el-button--danger):not(.el-button--success):not(.el-button--warning):not(.el-button--info):not(.is-link):not(.is-text):hover,
+.el-button:not(.el-button--primary):not(.el-button--danger):not(.el-button--success):not(.el-button--warning):not(.el-button--info):not(.is-link):not(.is-text):focus {
+  border-color: var(--app-color-primary) !important;
+  background: #f2f7fd !important;
+  color: var(--app-color-primary-dark) !important;
+}
+
+.el-table {
+  --el-table-border-color: #ebeef5;
+  --el-table-header-bg-color: #eff7ff;
+  --el-table-header-text-color: #3d4c5f;
+  --el-table-row-hover-bg-color: #eff7ff;
+  border-radius: 0 !important;
+  color: #303b49;
+}
+
+.el-table__inner-wrapper,
+.el-table__header-wrapper,
+.el-table__body-wrapper {
+  border-radius: 0 !important;
+}
+
+.el-table__inner-wrapper {
+  border-right: 1px solid var(--el-table-border-color);
+  border-left: 1px solid var(--el-table-border-color);
+}
+
+.el-table__inner-wrapper::before {
+  background-color: var(--el-table-border-color) !important;
+}
+
+.scene-table-card,
+.channel-table-card,
+.template-table-card,
+.record-table-card,
+.scene-param-page__card,
+.statistics-card {
+  --el-card-border-radius: 0;
+  border-radius: 0 !important;
+}
+
+.el-table .el-table__header-wrapper th.el-table__cell {
+  height: 40px !important;
+  padding: 0 !important;
+  border-right: 1px solid var(--el-table-border-color);
+  background: var(--el-table-header-bg-color) !important;
+  color: var(--el-table-header-text-color) !important;
+  font-size: 13px !important;
+  font-weight: 600 !important;
+  text-align: center !important;
+}
+
+.el-table .el-table__body-wrapper td.el-table__cell {
+  height: 40px !important;
+  padding: 0 !important;
+  border-right: 1px solid var(--el-table-border-color);
+  color: #303b49;
+  font-size: 13px !important;
+  text-align: center !important;
+}
+
+.el-table .el-table__cell .cell {
+  text-align: center !important;
+}
+
+.el-table .el-table__body tr:hover > td.el-table__cell {
+  background: var(--el-table-row-hover-bg-color) !important;
+}
+
+.el-table .el-scrollbar__bar.is-horizontal {
+  display: none !important;
+}
+
+.el-table.record-table .el-scrollbar__bar.is-horizontal {
+  display: block !important;
+  opacity: 1 !important;
+}
+
+.record-filter__native-date {
+  height: 32px !important;
+  border-radius: var(--app-radius-base) !important;
+}
+
+.el-pagination {
+  --el-pagination-button-width: 32px !important;
+  --el-pagination-button-height: 32px !important;
+}
+
+.el-pagination.is-background .btn-prev,
+.el-pagination.is-background .btn-next,
+.el-pagination.is-background .el-pager li {
+  border-radius: 0 !important;
+}
+
 .status-dot {
   display: inline-flex;
   align-items: center;

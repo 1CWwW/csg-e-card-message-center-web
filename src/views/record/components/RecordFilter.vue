@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { reactive, ref, watch } from 'vue'
-import { Refresh, Search } from '@element-plus/icons-vue'
 import { getRecordFilterOptions } from '../../../api/record'
 import UnitTreeSelect from '../../../components/business/UnitTreeSelect.vue'
 import { CHANNEL_TYPE_OPTIONS, type ChannelType } from '../../../types/channel'
@@ -315,13 +314,12 @@ const loadTemplateOptions = async (visible: boolean) => {
         <el-button
           class="record-filter__submit"
           type="primary"
-          :icon="Search"
           :loading="loading"
           @click="submit"
         >
           查询
         </el-button>
-        <el-button :icon="Refresh" :disabled="loading" @click="reset">重置</el-button>
+        <el-button :disabled="loading" @click="reset">重置</el-button>
       </el-form-item>
     </el-form>
   </el-card>
@@ -424,25 +422,27 @@ const loadTemplateOptions = async (visible: boolean) => {
 
 .record-filter__actions {
   :deep(.el-form-item__content) {
+    display: flex;
     justify-content: flex-end;
     flex-wrap: nowrap;
-    gap: 6px;
+    gap: 12px;
   }
 
   :deep(.el-button + .el-button) {
     margin-left: 0;
   }
+
 }
 
 .record-filter__submit {
   border: none;
-  background: linear-gradient(135deg, #2563eb, #6d28d9);
+  background: var(--app-color-primary);
   box-shadow: 0 5px 12px rgb(79 70 229 / 28%);
   font-weight: 600;
 
   &:hover,
   &:focus {
-    background: linear-gradient(135deg, #1d4ed8, #7c3aed);
+    background: var(--app-color-primary-dark);
   }
 }
 </style>

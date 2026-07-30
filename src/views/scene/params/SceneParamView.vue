@@ -30,6 +30,8 @@ const router = useRouter()
 
 const sceneDetail = ref<SceneItem | null>(null)
 const paramList = ref<SceneParamItem[]>([])
+const pageNum = ref(1)
+const pageSize = ref(10)
 const sceneLoading = ref(false)
 const listLoading = ref(false)
 const loadFailed = ref(false)
@@ -51,6 +53,11 @@ const sceneId = computed(() => {
   const value = route.params.sceneId
 
   return Array.isArray(value) ? value[0] : value
+})
+
+const paginatedParamList = computed(() => {
+  const start = (pageNum.value - 1) * pageSize.value
+  return paramList.value.slice(start, start + pageSize.value)
 })
 
 const normalizedParamList = (list: SceneParamItem[]) => {
@@ -97,6 +104,8 @@ const fetchParamList = async () => {
 
     if (!isUnmounted) {
       paramList.value = normalizedParamList(list || [])
+      const maxPage = Math.max(1, Math.ceil(paramList.value.length / pageSize.value))
+      pageNum.value = Math.min(pageNum.value, maxPage)
     }
   } catch {
     if (!isUnmounted) {
@@ -108,6 +117,15 @@ const fetchParamList = async () => {
       listLoading.value = false
     }
   }
+}
+
+const handleSizeChange = (value: number) => {
+  pageSize.value = value
+  pageNum.value = 1
+}
+
+const handlePageChange = (value: number) => {
+  pageNum.value = value
 }
 
 const refreshPage = async () => {
@@ -318,7 +336,7 @@ onBeforeUnmount(() => {
       <el-alert
         v-if="loadFailed"
         class="scene-param-page__alert"
-        title="参数列表加载失败，请检查后端服务或重新进入页面。"
+        title="暂时无法加载参数列表，请稍后重新进入页面。"
         type="error"
         show-icon
         :closable="false"
@@ -326,8 +344,10 @@ onBeforeUnmount(() => {
 
       <SceneParamTable
         v-if="paramList.length > 0 || listLoading"
-        :data="paramList"
+        :data="paginatedParamList"
         :loading="listLoading"
+        :page-num="pageNum"
+        :page-size="pageSize"
         :edit-checking-id="editCheckingId"
         :delete-checking-id="deleteCheckingId"
         :deleting-id="deletingId"
@@ -336,6 +356,20 @@ onBeforeUnmount(() => {
         @sort-change="handleSortChange"
         @delete="handleDelete"
       />
+
+      <div v-if="paramList.length > 0" class="scene-param-page__pagination">
+        <el-pagination
+          background
+          layout="total, prev, pager, next, sizes, jumper"
+          :pager-count="5"
+          :current-page="pageNum"
+          :page-size="pageSize"
+          :page-sizes="[10, 20, 50, 100]"
+          :total="paramList.length"
+          @size-change="handleSizeChange"
+          @current-change="handlePageChange"
+        />
+      </div>
 
       <el-empty
         v-if="!listLoading && !loadFailed && paramList.length === 0"
@@ -432,5 +466,12 @@ onBeforeUnmount(() => {
 
 .scene-param-page__empty {
   padding: 20px 0 28px;
+}
+
+.scene-param-page__pagination {
+  display: flex;
+  justify-content: flex-end;
+  padding: 12px 16px;
+  border-top: 1px solid #ebeef5;
 }
 </style>

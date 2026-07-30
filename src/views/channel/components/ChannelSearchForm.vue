@@ -107,7 +107,7 @@ const resetSearch = () => {
         <el-button class="channel-search__submit" type="primary" :loading="loading" @click="submitSearch">
           查询
         </el-button>
-        <el-button class="channel-search__reset" text :disabled="loading" @click="resetSearch">重置</el-button>
+        <el-button class="channel-search__reset" :disabled="loading" @click="resetSearch">重置</el-button>
       </el-form-item>
     </el-form>
   </el-card>
@@ -139,15 +139,9 @@ const resetSearch = () => {
 
 .channel-search__form {
   display: grid;
-  grid-template-columns:
-    minmax(170px, 292px)
-    minmax(150px, 224px)
-    minmax(140px, 224px)
-    minmax(180px, 260px)
-    auto;
+  grid-template-columns: repeat(4, minmax(0, 1fr)) auto;
   gap: 14px;
   align-items: start;
-  justify-content: start;
 }
 
 .channel-search__select {
@@ -158,8 +152,11 @@ const resetSearch = () => {
   :deep(.el-form-item__content) {
     display: flex;
     flex-wrap: nowrap;
-    gap: 14px;
-    min-width: 150px;
+    gap: 12px;
+  }
+
+  :deep(.el-button) {
+    margin-left: 0;
   }
 }
 

@@ -541,7 +541,7 @@ onMounted(() => {
       <el-alert
         v-if="loadFailed"
         class="template-table-card__alert"
-        title="模板列表加载失败，请检查后端服务或重新查询。"
+        title="暂时无法加载模板列表，请稍后重新查询。"
         type="error"
         show-icon
         :closable="false"
@@ -565,7 +565,7 @@ onMounted(() => {
       <div class="template-table-card__footer">
         <el-pagination
           background
-          layout="total, sizes, prev, pager, next"
+          layout="total, prev, pager, next, sizes, jumper"
           :pager-count="5"
           :current-page="currentPage"
           :page-size="currentPageSize"

@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { computed, nextTick, reactive, ref, watch } from 'vue'
+import { Document } from '@element-plus/icons-vue'
 import type { FormInstance, FormRules } from 'element-plus'
 import StatusSwitch from '../../../components/business/StatusSwitch.vue'
 import UnitTreeSelect from '../../../components/business/UnitTreeSelect.vue'
 import { CHANNEL_TYPE_OPTIONS } from '../../../types/channel'
+import ChannelTypeIcon from '../../channel/components/ChannelTypeIcon.vue'
 import type {
   TemplateCreateForm,
   TemplateDetail,
@@ -14,13 +16,6 @@ import type {
 import type { UnitTreeNode } from '../../../types/unit'
 
 type DialogMode = 'create' | 'edit'
-
-const CHANNEL_TYPE_ICONS: Record<string, string> = {
-  SMS: '📱',
-  EMAIL: '📧',
-  ELINK: '🔔',
-  IN_APP: '📬',
-}
 
 interface TemplateFormModel {
   templateName: string
@@ -226,9 +221,7 @@ const submitForm = async () => {
                 :value="channelType.value"
               >
                 <span class="template-form-dialog__channel">
-                  <span class="template-form-dialog__channel-icon">
-                    {{ CHANNEL_TYPE_ICONS[channelType.value] }}
-                  </span>
+                  <ChannelTypeIcon :channel-type="channelType.value" />
                   <span>{{ channelType.label }}</span>
                 </span>
               </el-radio>
@@ -246,7 +239,10 @@ const submitForm = async () => {
           </el-form-item>
 
           <div class="template-form-dialog__params">
-            <div class="template-form-dialog__params-title">📋 该场景的参数列表</div>
+            <div class="template-form-dialog__params-title">
+              <el-icon><Document /></el-icon>
+              <span>该场景的参数列表</span>
+            </div>
             <div v-if="sceneParams.length" class="template-form-dialog__params-list">
               <div
                 v-for="sceneParam in sceneParams"
@@ -277,9 +273,7 @@ const submitForm = async () => {
                 :value="channelType.value"
               >
                 <span class="template-form-dialog__channel">
-                  <span class="template-form-dialog__channel-icon">
-                    {{ CHANNEL_TYPE_ICONS[channelType.value] }}
-                  </span>
+                  <ChannelTypeIcon :channel-type="channelType.value" />
                   <span>{{ channelType.label }}</span>
                 </span>
               </el-radio>
@@ -385,7 +379,8 @@ const submitForm = async () => {
 .template-form-dialog__channel-group {
   display: flex;
   flex-wrap: wrap;
-  gap: 18px;
+  column-gap: 32px;
+  row-gap: 14px;
   width: 100%;
 
   :deep(.el-radio) {
@@ -404,11 +399,6 @@ const submitForm = async () => {
   gap: 5px;
   color: var(--app-text-primary);
   font-size: 13px;
-}
-
-.template-form-dialog__channel-icon {
-  font-size: 16px;
-  line-height: 1;
 }
 
 .template-form-dialog__all-units {
@@ -449,6 +439,9 @@ const submitForm = async () => {
 }
 
 .template-form-dialog__params-title {
+  display: flex;
+  align-items: center;
+  gap: 5px;
   margin-bottom: 10px;
   color: var(--app-text-secondary);
   font-size: 13px;
@@ -530,7 +523,8 @@ const submitForm = async () => {
 
 @media (max-width: 800px) {
   .template-form-dialog__channel-group {
-    gap: 18px;
+    column-gap: 20px;
+    row-gap: 12px;
   }
 }
 </style>

@@ -62,12 +62,12 @@ const iconComponent = computed(() => iconMap[props.channelType as ChannelType] |
 
 .channel-type-icon.is-SMS {
   background: #fff7ed;
-  color: #f97316;
+  color: var(--app-color-warning);
 }
 
 .channel-type-icon.is-EMAIL {
   background: #eff6ff;
-  color: #2563eb;
+  color: var(--app-color-primary);
 }
 
 .channel-type-icon.is-ELINK {
@@ -77,6 +77,6 @@ const iconComponent = computed(() => iconMap[props.channelType as ChannelType] |
 
 .channel-type-icon.is-IN_APP {
   background: #ecfdf5;
-  color: #16a34a;
+  color: var(--app-color-success);
 }
 </style>

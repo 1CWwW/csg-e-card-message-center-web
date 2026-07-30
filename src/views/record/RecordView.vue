@@ -119,7 +119,12 @@ const fetchRecordList = async () => {
       return
     }
 
-    const currentRows = pageData.list || []
+    const currentRows = await enrichRecordOrganizations(pageData.list || [])
+
+    if (requestSequence !== listRequestSequence) {
+      return
+    }
+
     recordList.value = currentRows
     total.value = pageData.total ?? 0
 
@@ -275,7 +280,7 @@ const confirmResend = async (row: MessageRecordListItem | MessageRecordDetail) =
 
   try {
     await ElMessageBox.confirm(
-      `确认重新发送消息“${row.msgId}”吗？重发将使用后端保存的完整历史内容。`,
+      `确认重新发送消息“${row.msgId}”吗？重发将使用该消息保存的完整历史内容。`,
       '重新发送确认',
       {
         type: 'warning',
@@ -456,7 +461,7 @@ onMounted(() => {
       <el-alert
         v-if="listFailed"
         class="record-table-card__alert"
-        title="消息记录加载失败，请检查后端服务或重新查询。"
+        title="暂时无法加载消息记录，请稍后重新查询。"
         type="error"
         show-icon
         :closable="false"
@@ -468,6 +473,7 @@ onMounted(() => {
         :data="recordList"
         row-key="id"
         table-layout="fixed"
+        scrollbar-always-on
         empty-text="暂无消息记录"
       >
         <el-table-column label="消息 ID" width="165" show-overflow-tooltip>
@@ -598,7 +604,7 @@ onMounted(() => {
         <span></span>
         <el-pagination
           background
-          layout="total, sizes, prev, pager, next"
+          layout="total, prev, pager, next, sizes, jumper"
           :pager-count="5"
           :current-page="query.pageNum"
           :page-size="query.pageSize"
@@ -679,7 +685,7 @@ onMounted(() => {
   display: block;
   max-width: 100%;
   overflow: hidden;
-  color: #2563eb;
+  color: var(--app-color-primary);
   font-family: Consolas, 'Courier New', monospace;
   text-overflow: ellipsis;
   white-space: nowrap;

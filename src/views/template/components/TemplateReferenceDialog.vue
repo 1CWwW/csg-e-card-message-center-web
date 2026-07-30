@@ -287,11 +287,12 @@ onBeforeUnmount(() => {
 
     <div class="template-reference-dialog__pager">
       <el-pagination
+        background
         v-model:current-page="query.pageNum"
         v-model:page-size="query.pageSize"
-        layout="total, sizes, prev, pager, next"
+        layout="total, prev, pager, next, sizes, jumper"
         :pager-count="5"
-        :page-sizes="[10, 20, 50]"
+        :page-sizes="[10, 20, 50, 100]"
         :total="total"
         @size-change="resetAndLoad"
         @current-change="loadReferences"

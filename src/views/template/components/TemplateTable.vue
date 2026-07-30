@@ -182,8 +182,13 @@ const isBusy = () => Boolean(props.operationLoadingKey)
     overflow: visible;
   }
 
+  :deep(th.el-table-fixed-column--right),
+  :deep(td.el-table-fixed-column--right) {
+    border-left: 1px solid #ebeef5 !important;
+  }
+
   :deep(.template-table__scene-cell .cell) {
-    text-align: left;
+    text-align: center;
     white-space: normal;
   }
 }
@@ -194,11 +199,13 @@ const isBusy = () => Boolean(props.operationLoadingKey)
 }
 
 .template-table__scene-link {
-  display: block;
+  display: flex;
+  width: 100%;
   max-width: 100%;
+  margin-left: 0;
   overflow: hidden;
-  justify-content: flex-start;
-  text-align: left;
+  justify-content: center;
+  text-align: center;
   text-overflow: ellipsis;
   vertical-align: middle;
   white-space: normal;
@@ -206,7 +213,7 @@ const isBusy = () => Boolean(props.operationLoadingKey)
   :deep(span) {
     display: inline;
     line-height: 20px;
-    text-align: left;
+    text-align: center;
     white-space: normal;
     word-break: break-all;
   }
@@ -215,7 +222,7 @@ const isBusy = () => Boolean(props.operationLoadingKey)
 .template-table__scene-text {
   display: block;
   line-height: 20px;
-  text-align: left;
+  text-align: center;
   word-break: break-all;
 }
 
@@ -227,11 +234,11 @@ const isBusy = () => Boolean(props.operationLoadingKey)
 }
 
 .template-table__type.is-SMS {
-  color: #f97316;
+  color: var(--app-color-warning);
 }
 
 .template-table__type.is-EMAIL {
-  color: #2563eb;
+  color: var(--app-color-primary);
 }
 
 .template-table__type.is-ELINK {
@@ -239,7 +246,7 @@ const isBusy = () => Boolean(props.operationLoadingKey)
 }
 
 .template-table__type.is-IN_APP {
-  color: #16a34a;
+  color: var(--app-color-success);
 }
 
 .template-table__unit-all {
@@ -255,19 +262,19 @@ const isBusy = () => Boolean(props.operationLoadingKey)
 }
 
 .template-table__tag.is-content-ready {
-  --el-tag-text-color: #16a34a;
+  --el-tag-text-color: var(--app-color-success);
   --el-tag-bg-color: #ecfdf5;
   --el-tag-border-color: #bbf7d0;
 }
 
 .template-table__tag.is-content-empty {
-  --el-tag-text-color: #ea580c;
+  --el-tag-text-color: var(--app-color-warning);
   --el-tag-bg-color: #fff7ed;
   --el-tag-border-color: #fed7aa;
 }
 
 .template-table__switch {
-  --el-switch-on-color: #2563eb;
+  --el-switch-on-color: var(--app-color-primary);
   --el-switch-off-color: #d8dee8;
   height: 30px;
   line-height: 30px;

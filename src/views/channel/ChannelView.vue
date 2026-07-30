@@ -319,7 +319,7 @@ onMounted(() => {
       <el-alert
         v-if="loadFailed"
         class="channel-table-card__alert"
-        title="渠道列表加载失败，请检查后端服务或重新查询。"
+        title="暂时无法加载渠道列表，请稍后重新查询。"
         type="error"
         show-icon
         :closable="false"
@@ -339,7 +339,7 @@ onMounted(() => {
       <div class="channel-table-card__footer">
         <el-pagination
           background
-          layout="total, sizes, prev, pager, next"
+          layout="total, prev, pager, next, sizes, jumper"
           :pager-count="5"
           :current-page="query.pageNum"
           :page-size="query.pageSize"

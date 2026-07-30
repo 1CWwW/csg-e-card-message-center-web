@@ -15,7 +15,8 @@ import type {
   UnitStatisticsItem,
 } from '../types/statistics'
 
-type StatisticsParams = Record<string, string | string[] | undefined>
+type StatisticsParamValue = string | string[] | boolean
+type StatisticsParams = Record<string, StatisticsParamValue | undefined>
 
 const arrayKeys = new Set(['channelTypes', 'sceneIds', 'unitIds', 'templateIds', 'callTypes'])
 
@@ -31,7 +32,7 @@ const isStatisticsListResult = <T>(data: T[] | StatisticsListResult<T>): data is
   return !Array.isArray(data) && typeof data === 'object' && data !== null && 'items' in data
 }
 
-const appendParam = (searchParams: URLSearchParams, key: string, value: string | string[]) => {
+const appendParam = (searchParams: URLSearchParams, key: string, value: StatisticsParamValue) => {
   if (Array.isArray(value)) {
     value.forEach((item) => {
       if (item) {
@@ -42,7 +43,7 @@ const appendParam = (searchParams: URLSearchParams, key: string, value: string |
   }
 
   if (value !== '') {
-    searchParams.append(key, value)
+    searchParams.append(key, String(value))
   }
 }
 
@@ -77,6 +78,7 @@ const buildStatisticsParams = (query: StatisticsQuery): StatisticsParams => ({
   channelTypes: query.channelTypes,
   sceneIds: query.sceneIds,
   unitIds: query.unitIds,
+  includeSubUnits: query.includeSubUnits,
   templateIds: query.templateIds,
   callTypes: query.callTypes,
 })

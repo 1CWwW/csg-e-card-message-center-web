@@ -53,7 +53,7 @@ const handleChange = (value: string | number | boolean) => {
 }
 
 .status-switch :deep(.el-switch) {
-  --el-switch-on-color: #2563eb;
+  --el-switch-on-color: var(--app-color-primary);
   --el-switch-off-color: #d8dee8;
   height: 30px;
   line-height: 30px;

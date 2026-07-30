@@ -460,7 +460,7 @@ const syncResponseExample = computed(() =>
 
   &--400 {
     background: #fff5e8;
-    color: #f97316;
+    color: var(--app-color-warning);
   }
 
   &--500 {

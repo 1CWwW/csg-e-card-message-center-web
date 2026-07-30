@@ -16,6 +16,7 @@ export interface StatisticsQuery {
   channelTypes?: ChannelType[]
   sceneIds?: string[]
   unitIds?: string[]
+  includeSubUnits?: boolean
   templateIds?: string[]
   callTypes?: MessageCallType[]
   granularity?: StatisticsGranularity

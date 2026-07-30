@@ -168,7 +168,14 @@ watch(
             </div>
             <div class="record-detail-dialog__item">
               <span>业务ID：</span>
-              <strong class="is-mono">{{ detail.bizId || '-' }}</strong>
+              <el-tooltip
+                :content="detail.bizId || '-'"
+                placement="top"
+                popper-class="record-detail-id-tooltip"
+                :show-after="300"
+              >
+                <strong class="is-mono">{{ detail.bizId || '-' }}</strong>
+              </el-tooltip>
             </div>
             <div class="record-detail-dialog__item">
               <span>场景：</span>
@@ -204,7 +211,14 @@ watch(
           <div class="record-detail-dialog__grid">
             <div class="record-detail-dialog__item">
               <span>用户ID：</span>
-              <strong>{{ detail.userId || '-' }}</strong>
+              <el-tooltip
+                :content="detail.userId || '-'"
+                placement="top"
+                popper-class="record-detail-id-tooltip"
+                :show-after="300"
+              >
+                <strong class="is-mono">{{ detail.userId || '-' }}</strong>
+              </el-tooltip>
             </div>
             <div class="record-detail-dialog__item">
               <span>姓名：</span>
@@ -426,11 +440,17 @@ watch(
   font-weight: 500;
   line-height: 1.45;
 
+  > span {
+    flex: 0 0 auto;
+    white-space: nowrap;
+  }
+
   &.is-full {
     grid-column: 1 / -1;
   }
 
   strong {
+    flex: 1 1 auto;
     min-width: 0;
     overflow: hidden;
     color: #24324a;
@@ -444,6 +464,12 @@ watch(
     font-size: 12px;
     font-weight: 500;
   }
+}
+
+:global(.record-detail-id-tooltip) {
+  max-width: min(420px, calc(100vw - 32px));
+  overflow-wrap: anywhere;
+  word-break: break-all;
 }
 
 .record-detail-dialog__status {
@@ -497,7 +523,7 @@ watch(
     padding: 0;
     border: 0;
     background: transparent;
-    color: var(--primary-color, #2563eb);
+    color: var(--primary-color, #0069f1);
     cursor: pointer;
     font-size: 13px;
   }
@@ -573,7 +599,7 @@ watch(
   padding: 0;
   border: 0;
   background: transparent;
-  color: var(--primary-color, #2563eb);
+  color: var(--primary-color, #0069f1);
   cursor: pointer;
   font-size: 13px;
 }
@@ -599,7 +625,7 @@ watch(
     padding: 0;
     border: 0;
     background: transparent;
-    color: var(--primary-color, #2563eb);
+    color: var(--primary-color, #0069f1);
     cursor: pointer;
     font-size: 13px;
   }

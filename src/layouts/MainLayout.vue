@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import AppMain from './components/AppMain.vue'
 import AppSidebar from './components/AppSidebar.vue'
+
+const isEmbedded = window.self !== window.top
 </script>
 
 <template>
   <div class="app-layout">
-    <AppSidebar />
+    <AppSidebar v-if="!isEmbedded" />
     <section class="app-shell">
       <AppMain />
     </section>

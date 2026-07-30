@@ -6,6 +6,8 @@ import { getSceneParamTypeLabel, type SceneParamItem } from '../../../../types/s
 const props = defineProps<{
   data: SceneParamItem[]
   loading: boolean
+  pageNum: number
+  pageSize: number
   editCheckingId: string
   deleteCheckingId: string
   deletingId: string
@@ -96,7 +98,7 @@ const handleSortBlur = (row: SceneParamItem, event: FocusEvent) => {
   >
     <el-table-column label="序号" width="70" align="center">
       <template #default="{ $index }">
-        {{ $index + 1 }}
+        {{ (pageNum - 1) * pageSize + $index + 1 }}
       </template>
     </el-table-column>
     <el-table-column label="参数名" prop="paramName" min-width="190" show-overflow-tooltip>
