@@ -51,10 +51,17 @@ type TemplateFieldValidator = Blockly.FieldTextInputValidator | undefined
 class TemplateTextInput extends Blockly.FieldTextInput {
   private underline: SVGLineElement | null = null
   private readonly placeholder: string
+  private readonly maxLength?: number
 
-  constructor(value = '', validator?: TemplateFieldValidator, placeholder = '') {
+  constructor(
+    value = '',
+    validator?: TemplateFieldValidator,
+    placeholder = '',
+    maxLength?: number,
+  ) {
     super(value, validator)
     this.placeholder = placeholder
+    this.maxLength = maxLength
   }
 
   override initView() {
@@ -100,6 +107,9 @@ class TemplateTextInput extends Blockly.FieldTextInput {
     input.classList.add('template-block-text-input')
     if (this.placeholder) {
       input.setAttribute('placeholder', this.placeholder)
+    }
+    if (this.maxLength !== undefined) {
+      input.maxLength = this.maxLength
     }
 
     ;['pointerdown', 'mousedown', 'click', 'keydown'].forEach((eventName) => {
@@ -167,6 +177,12 @@ const decimalValidator = (value: string) => {
   const decimals = Number(normalized)
   return decimals >= 0 && decimals <= 6 ? normalized : null
 }
+
+const FOR_EACH_SEPARATOR_MAX_LENGTH = 32
+const forEachSeparatorValidator = (value: string) =>
+  value.length <= FOR_EACH_SEPARATOR_MAX_LENGTH
+    ? value
+    : value.slice(0, FOR_EACH_SEPARATOR_MAX_LENGTH)
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null
@@ -462,11 +478,25 @@ export const registerTemplateBlocks = () => {
   Blockly.Blocks.controls_forEach = {
     init() {
       this.appendDummyInput().appendField('for-each 遍历数组')
-      this.appendDummyInput().appendField('数组').appendField('连接数组参数')
-      this.appendDummyInput().appendField('内容').appendField('每项输出内容')
+      this.appendDummyInput()
+        .appendField('分隔符')
+        .appendField(
+          new TemplateTextInput(
+            '',
+            forEachSeparatorValidator,
+            '例如：，、；或空格',
+            FOR_EACH_SEPARATOR_MAX_LENGTH,
+          ),
+          'SEPARATOR',
+        )
+      this.appendDummyInput()
+        .appendField('数组')
+        .appendField('连接数组参数')
+        .appendField('内容')
+        .appendField('每项输出内容')
       this.setOutput(true, 'String')
       this.setStyle('loop_expression_blocks')
-      this.setTooltip('连接数组参数和每项输出内容，按数组逐项渲染')
+      this.setTooltip('连接数组参数和每项输出内容，按数组逐项渲染，并在循环项之间插入分隔符')
     },
   }
 

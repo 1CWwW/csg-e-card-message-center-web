@@ -425,6 +425,10 @@ const resetPreviewValues = (toolbox: TemplateToolboxData) => {
 }
 
 const isObjectArrayParam = (paramType: string) => paramType === 'OBJECT_ARRAY'
+const previewTimePattern = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}(?:\.\d{1,9})?$/
+
+const isEmptyPreviewValue = (value: string | boolean | undefined) =>
+  value === undefined || (typeof value === 'string' && !value.trim())
 
 const isWalletItem = (value: unknown): value is TemplatePreviewObject => {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
@@ -522,6 +526,16 @@ const getPreviewValue = (paramName: string, paramType: string): TemplatePreviewV
     return Number.isFinite(numericValue) ? numericValue : 0
   }
 
+  if (paramType === 'TIME') {
+    const normalizedValue = textValue.trim()
+    if (!previewTimePattern.test(normalizedValue)) {
+      ElMessage.warning(`${paramName} 必须输入日期时间，例如 2026-06-06 11:11:11.123`)
+      return null
+    }
+
+    return normalizedValue
+  }
+
   if (paramType === 'STRING_ARRAY' || paramType === 'NUMBER_ARRAY') {
     return parsePreviewArrayValue(paramName, paramType, textValue)
   }
@@ -539,7 +553,7 @@ const getPreviewPlaceholder = (paramType: string) => {
   }
 
   if (paramType === 'TIME') {
-    return '如：2026-06-06 11:11:11'
+    return '如：2026-06-06 11:11:11.123'
   }
 
   return '如：食堂一楼'
@@ -1529,6 +1543,15 @@ const runPreview = async () => {
 
     const values: Record<string, TemplatePreviewValue> = {}
     for (const param of toolboxData.value.params) {
+      const inputValue = previewValues[param.paramName]
+      if (isEmptyPreviewValue(inputValue)) {
+        if (param.isRequired === 1) {
+          ElMessage.warning(`请填写必填参数“${param.paramLabel || param.paramName}”`)
+          return
+        }
+        continue
+      }
+
       const previewValue = getPreviewValue(param.paramName, param.paramType)
       if (previewValue === null) {
         return
@@ -2444,6 +2467,7 @@ watch(previewExpanded, async () => {
   :deep(.el-input__inner) {
     font-size: 12px;
   }
+
 }
 
 .template-editor-page__preview-result {

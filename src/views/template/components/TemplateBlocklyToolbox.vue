@@ -220,6 +220,7 @@ const groups = computed<ToolboxGroup[]>(() => [
         tagClass: 'is-loop',
         state: {
           type: 'controls_forEach',
+          fields: { SEPARATOR: '' },
           extraState: { operation: 'FOR_EACH' },
         },
       },
