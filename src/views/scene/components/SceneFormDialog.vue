@@ -333,7 +333,7 @@ const submitForm = async () => {
 
     <div v-loading="detailLoading" class="scene-dialog__body">
       <el-form ref="formRef" :model="formModel" :rules="formRules" label-position="top">
-        <el-form-item label="场景编码" prop="sceneCode">
+        <el-form-item label="场景编码" prop="sceneCode" required>
           <el-input
             v-model.trim="formModel.sceneCode"
             :disabled="props.mode === 'edit'"
@@ -347,7 +347,7 @@ const submitForm = async () => {
             {{ codeCheckMessage }}
           </div>
         </el-form-item>
-        <el-form-item label="场景名称" prop="sceneName">
+        <el-form-item label="场景名称" prop="sceneName" required>
           <el-input
             v-model.trim="formModel.sceneName"
             maxlength="50"
@@ -581,7 +581,6 @@ const submitForm = async () => {
 }
 
 :global(.scene-form-dialog-shell .el-input__inner),
-:global(.scene-form-dialog-shell .el-select__placeholder),
 :global(.scene-form-dialog-shell .el-select__selected-item) {
   color: #172033;
   font-size: 15px;
@@ -589,19 +588,20 @@ const submitForm = async () => {
 }
 
 :global(.scene-form-dialog-shell .el-input__inner::placeholder),
-:global(.scene-form-dialog-shell .el-textarea__inner::placeholder) {
+:global(.scene-form-dialog-shell .el-textarea__inner::placeholder),
+:global(.scene-form-dialog-shell .el-select__placeholder.is-transparent) {
   color: #777777;
   font-weight: 400;
 }
 
 :global(.scene-form-dialog-shell .el-textarea__inner) {
   box-sizing: border-box;
-  height: 70px !important;
-  min-height: 70px !important;
-  padding: 12px 14px;
+  min-height: 92px !important;
+  padding: 12px 14px 30px;
   color: #172033;
   font-size: 15px;
   line-height: 1.35;
+  resize: vertical;
 }
 
 :global(.scene-form-dialog-shell .scene-dialog__status-item) {

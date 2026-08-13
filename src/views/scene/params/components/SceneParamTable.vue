@@ -43,7 +43,7 @@ const formatDateTime = (value: string) => {
     return '-'
   }
 
-  return value.replace('T', ' ').slice(0, 16)
+  return value.replace('T', ' ').slice(0, 19)
 }
 
 const handleSortInput = (row: SceneParamItem, value: string) => {
@@ -72,14 +72,6 @@ const handleSortBlur = (row: SceneParamItem, event: FocusEvent) => {
   const nextSortOrder = Number(rawValue)
 
   if (nextSortOrder === row.sortOrder) {
-    resetSortInput(row)
-    return
-  }
-
-  const duplicated = props.data.some((item) => item.id !== row.id && item.sortOrder === nextSortOrder)
-
-  if (duplicated) {
-    ElMessage.warning('排序号不能重复')
     resetSortInput(row)
     return
   }
@@ -141,7 +133,7 @@ const handleSortBlur = (row: SceneParamItem, event: FocusEvent) => {
         <span class="scene-param-table__usage">{{ row.usageCount }}</span>
       </template>
     </el-table-column>
-    <el-table-column label="创建时间" width="150">
+    <el-table-column label="创建时间" width="170">
       <template #default="{ row }">
         {{ formatDateTime(row.createdAt) }}
       </template>

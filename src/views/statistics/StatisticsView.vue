@@ -135,7 +135,7 @@ function createTabState<T>(): TabState<T> {
     error: '',
     data: [],
     pageNum: 1,
-    pageSize: 10,
+    pageSize: 20,
   }
 }
 
@@ -1146,7 +1146,7 @@ onMounted(async () => {
             </el-select>
           </el-form-item>
           <el-form-item class="statistics-page__filter-actions" label=" ">
-            <el-button type="primary" :loading="activeState.loading" :disabled="isBusy" @click="handleSearch">
+            <el-button type="primary" :disabled="isBusy" @click="handleSearch">
               查询
             </el-button>
             <el-button :disabled="isBusy" @click="handleReset">重置</el-button>

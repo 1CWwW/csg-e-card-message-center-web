@@ -314,7 +314,7 @@ const loadTemplateOptions = async (visible: boolean) => {
         <el-button
           class="record-filter__submit"
           type="primary"
-          :loading="loading"
+          :disabled="loading"
           @click="submit"
         >
           查询

@@ -51,7 +51,7 @@ let listRequestSequence = 0
 
 const query = reactive<MessageRecordQuery>({
   pageNum: 1,
-  pageSize: 10,
+  pageSize: 20,
 })
 
 const statusTextMap: Record<string, string> = {

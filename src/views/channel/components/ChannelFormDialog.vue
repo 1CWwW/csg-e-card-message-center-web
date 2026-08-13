@@ -52,6 +52,7 @@ const emit = defineEmits<{
 
 const formRef = ref<FormInstance>()
 const allUnits = ref(true)
+const EMAIL_PATTERN = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/
 
 const formModel = reactive<ChannelFormModel>({
   channelName: '',
@@ -100,7 +101,7 @@ const validateTypeConfig = (_rule: unknown, _value: string, callback: (error?: E
       return
     }
 
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formModel.senderEmail.trim())) {
+    if (!EMAIL_PATTERN.test(formModel.senderEmail.trim())) {
       callback(new Error('请输入正确的邮箱地址'))
       return
     }
@@ -314,10 +315,10 @@ const submitForm = async () => {
             placeholder="请输入渠道名称"
           />
         </el-form-item>
-        <el-form-item v-if="currentChannelType === 'SMS'" label="发送号码" prop="senderNumber">
+        <el-form-item v-if="currentChannelType === 'SMS'" label="发送号码" prop="senderNumber" required>
           <el-input v-model.trim="formModel.senderNumber" placeholder="请输入短信发送号码" />
         </el-form-item>
-        <el-form-item v-if="currentChannelType === 'EMAIL'" label="发送邮箱" prop="senderEmail">
+        <el-form-item v-if="currentChannelType === 'EMAIL'" label="发送邮箱" prop="senderEmail" required>
           <el-input v-model.trim="formModel.senderEmail" placeholder="请输入邮件发送邮箱" />
         </el-form-item>
         <el-form-item v-if="currentChannelType === 'ELINK'" label="应用ID" prop="appId">

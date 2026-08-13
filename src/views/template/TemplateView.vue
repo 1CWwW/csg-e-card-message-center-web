@@ -71,7 +71,7 @@ const unitTreeLoading = ref(false)
 
 const query = reactive<TemplateQuery>({
   pageNum: '1',
-  pageSize: '10',
+  pageSize: '20',
 })
 
 const searchQuery = computed<TemplateSearchPayload>(() => ({
@@ -91,7 +91,7 @@ const overview = reactive({
 
 const enabledScenes = computed(() => sceneOptions.value.filter((scene) => scene.status === 1))
 const currentPage = computed(() => Number(query.pageNum) || 1)
-const currentPageSize = computed(() => Number(query.pageSize) || 10)
+const currentPageSize = computed(() => Number(query.pageSize) || 20)
 const enabledRatio = computed(() => {
   if (overview.total === 0) {
     return '0%'

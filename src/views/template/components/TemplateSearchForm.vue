@@ -154,7 +154,7 @@ const resetSearch = () => {
         />
       </el-form-item>
       <el-form-item class="template-search__actions" label-width="0">
-        <el-button class="template-search__submit" type="primary" :loading="loading" @click="submitSearch">
+        <el-button class="template-search__submit" type="primary" :disabled="loading" @click="submitSearch">
           查询
         </el-button>
         <el-button class="template-search__reset" :disabled="loading" @click="resetSearch">

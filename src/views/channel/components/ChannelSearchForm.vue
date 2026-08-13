@@ -38,6 +38,7 @@ const searchForm = reactive<ChannelSearchModel>({
 
 const buildSearchPayload = () => {
   const payload: ChannelSearchPayload = {}
+  const unitId = typeof searchForm.unitId === 'string' ? searchForm.unitId.trim() : ''
 
   if (searchForm.channelName.trim()) {
     payload.channelName = searchForm.channelName.trim()
@@ -51,8 +52,8 @@ const buildSearchPayload = () => {
     payload.status = searchForm.status
   }
 
-  if (searchForm.unitId.trim()) {
-    payload.unitId = searchForm.unitId.trim()
+  if (unitId) {
+    payload.unitId = unitId
   }
 
   return payload
@@ -104,7 +105,7 @@ const resetSearch = () => {
         />
       </el-form-item>
       <el-form-item class="channel-search__actions" label-width="0">
-        <el-button class="channel-search__submit" type="primary" :loading="loading" @click="submitSearch">
+        <el-button class="channel-search__submit" type="primary" :disabled="loading" @click="submitSearch">
           查询
         </el-button>
         <el-button class="channel-search__reset" :disabled="loading" @click="resetSearch">重置</el-button>
@@ -139,7 +140,7 @@ const resetSearch = () => {
 
 .channel-search__form {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr)) auto;
+  grid-template-columns: repeat(4, minmax(0, 1fr)) 160px;
   gap: 14px;
   align-items: start;
 }
@@ -161,7 +162,7 @@ const resetSearch = () => {
 }
 
 .channel-search__submit {
-  min-width: 74px;
+  width: 74px;
   min-height: 40px;
   border: none;
   border-radius: 9px;
@@ -171,6 +172,7 @@ const resetSearch = () => {
 }
 
 .channel-search__reset {
+  width: 74px;
   min-height: 40px;
   color: var(--app-text-secondary);
   font-weight: 600;

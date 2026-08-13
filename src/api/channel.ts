@@ -42,6 +42,11 @@ const buildChannelListParams = (query: ChannelQuery) => {
     params.unitId = query.unitId.trim()
   }
 
+  if (query.sortField && query.sortOrder) {
+    params.sortField = query.sortField
+    params.sortOrder = query.sortOrder
+  }
+
   return params
 }
 

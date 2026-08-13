@@ -56,7 +56,7 @@ const unitDetailChannel = ref<ChannelItem | null>(null)
 
 const query = reactive<ChannelQuery>({
   pageNum: 1,
-  pageSize: 10,
+  pageSize: 20,
 })
 
 const overview = reactive<Record<ChannelType, number>>({
@@ -138,6 +138,17 @@ const handleSizeChange = (pageSize: number) => {
 
 const handlePageChange = (pageNum: number) => {
   query.pageNum = pageNum
+  fetchChannelList()
+}
+
+const handlePrioritySortChange = (order: 'ascending' | 'descending') => {
+  if (listLoading.value) {
+    return
+  }
+
+  query.pageNum = 1
+  query.sortField = 'priority'
+  query.sortOrder = order === 'ascending' ? 'ASC' : 'DESC'
   fetchChannelList()
 }
 
@@ -334,6 +345,7 @@ onMounted(() => {
           @edit="openEditDialog"
           @delete="handleDelete"
           @show-units="openUnitDetailDialog"
+          @priority-sort-change="handlePrioritySortChange"
         />
       </div>
       <div class="channel-table-card__footer">

@@ -182,7 +182,8 @@ const selectedValue = computed({
       return
     }
 
-    emit('update:modelValue', Array.isArray(value) ? value[0] || '' : value)
+    const selectedUnitId = Array.isArray(value) ? value[0] : value
+    emit('update:modelValue', typeof selectedUnitId === 'string' ? selectedUnitId : '')
   },
 })
 

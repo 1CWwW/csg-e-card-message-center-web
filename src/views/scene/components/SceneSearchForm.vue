@@ -90,7 +90,7 @@ const resetSearch = () => {
         </el-select>
       </el-form-item>
       <el-form-item class="scene-search__actions" label-width="0">
-        <el-button class="scene-search__submit" type="primary" :loading="loading" @click="submitSearch">查询</el-button>
+        <el-button class="scene-search__submit" type="primary" :disabled="loading" @click="submitSearch">查询</el-button>
         <el-button class="scene-search__reset" :disabled="loading" @click="resetSearch">重置</el-button>
       </el-form-item>
     </el-form>

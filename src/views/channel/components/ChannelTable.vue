@@ -2,6 +2,8 @@
 import { getChannelTypeLabel, type ChannelItem } from '../../../types/channel'
 import ChannelTypeIcon from './ChannelTypeIcon.vue'
 
+type PrioritySortOrder = 'ascending' | 'descending' | null
+
 defineProps<{
   data: ChannelItem[]
   loading: boolean
@@ -14,6 +16,7 @@ const emit = defineEmits<{
   edit: [row: ChannelItem]
   delete: [row: ChannelItem]
   'show-units': [row: ChannelItem]
+  'priority-sort-change': [order: Exclude<PrioritySortOrder, null>]
 }>()
 
 const getStatusType = (status: number) => {
@@ -45,6 +48,12 @@ const getTypeConfigSummary = (row: ChannelItem) => {
 }
 
 const isAllUnits = (row: ChannelItem) => (row.unitCount ?? 0) === 0
+
+const handleSortChange = ({ prop, order }: { prop: string; order: PrioritySortOrder }) => {
+  if (prop === 'priority' && order) {
+    emit('priority-sort-change', order)
+  }
+}
 </script>
 
 <template>
@@ -55,6 +64,7 @@ const isAllUnits = (row: ChannelItem) => (row.unitCount ?? 0) === 0
     empty-text="暂无渠道数据"
     row-key="id"
     table-layout="fixed"
+    @sort-change="handleSortChange"
   >
     <el-table-column label="序号" width="70" align="center">
       <template #default="{ $index }">
@@ -89,7 +99,14 @@ const isAllUnits = (row: ChannelItem) => (row.unitCount ?? 0) === 0
         </el-button>
       </template>
     </el-table-column>
-    <el-table-column label="优先级" prop="priority" width="100" align="center">
+    <el-table-column
+      label="优先级"
+      prop="priority"
+      width="100"
+      align="center"
+      sortable="custom"
+      :sort-orders="['ascending', 'descending']"
+    >
       <template #default="{ row }">
         <span class="channel-table__priority">{{ row.priority }}</span>
       </template>

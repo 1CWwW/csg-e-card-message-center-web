@@ -43,7 +43,7 @@ const createdAtSortOrder = ref<SceneSortOrder>(null)
 
 const query = reactive<SceneQuery>({
   pageNum: 1,
-  pageSize: 10,
+  pageSize: 20,
 })
 
 const overview = reactive({
@@ -242,20 +242,20 @@ const handleUpdate = async (form: SceneUpdateForm) => {
   }
 
   if (currentScene.value.status === 1 && form.status === 0) {
-    let confirmMessage = `确认停用场景“${currentScene.value.sceneName}”吗？`
-
     try {
       const { enabledTemplateCount } = await checkSceneDisable(currentScene.value.id)
 
       if (enabledTemplateCount > 0) {
-        confirmMessage = `该场景下存在${enabledTemplateCount}个启用的模板，停用后这些模板的推送将全部失败。确认停用？`
+        await ElMessageBox.confirm(
+          `该场景下存在${enabledTemplateCount}个启用的模板，停用后这些模板的推送将全部失败。确认停用？`,
+          '停用确认',
+          {
+            type: 'warning',
+            confirmButtonText: '确认停用',
+            cancelButtonText: '取消',
+          },
+        )
       }
-
-      await ElMessageBox.confirm(confirmMessage, '停用确认', {
-        type: 'warning',
-        confirmButtonText: '确认停用',
-        cancelButtonText: '取消',
-      })
     } catch {
       return
     }
@@ -274,13 +274,22 @@ const handleUpdate = async (form: SceneUpdateForm) => {
 }
 
 const handleDelete = async (row: SceneItem) => {
+  if (row.templateCount > 0) {
+    ElMessage.warning(`存在${row.templateCount}个消息模板，无法删除`)
+    return
+  }
+
   try {
-    await ElMessageBox.confirm(`确认删除场景“${row.sceneName}”吗？`, '删除确认', {
-      type: 'warning',
-      confirmButtonText: '确认删除',
-      cancelButtonText: '取消',
-      confirmButtonClass: 'el-button--danger',
-    })
+    await ElMessageBox.confirm(
+      `确认删除场景【${row.sceneCode} - ${row.sceneName}】？删除后不可恢复`,
+      '删除确认',
+      {
+        type: 'warning',
+        confirmButtonText: '确认删除',
+        cancelButtonText: '取消',
+        confirmButtonClass: 'el-button--danger',
+      },
+    )
   } catch {
     return
   }

@@ -14,6 +14,8 @@ import StatusSwitch from '../../../../components/business/StatusSwitch.vue'
 
 type DialogMode = 'create' | 'edit'
 
+const MAX_SORT_ORDER = 2147483647
+
 interface SceneParamFormModel {
   paramName: string
   paramLabel: string
@@ -105,7 +107,7 @@ const duplicateNameTip = computed(() => {
     return item.paramName.toLowerCase() === currentName.toLowerCase()
   })
 
-  return duplicated ? '当前列表已存在同名参数，请修改后再试' : ''
+  return duplicated ? '当前列表已存在同名参数' : ''
 })
 
 const validateParamName = (_rule: unknown, value: string, callback: (error?: Error) => void) => {
@@ -140,8 +142,8 @@ const validateSortOrder = (_rule: unknown, value: number | null, callback: (erro
     return
   }
 
-  if (!Number.isInteger(value) || value < 1) {
-    callback(new Error('排序号必须是正整数'))
+  if (!Number.isInteger(value) || value < 1 || value > MAX_SORT_ORDER) {
+    callback(new Error(`排序必须是 1 至 ${MAX_SORT_ORDER} 的整数`))
     return
   }
 
@@ -154,7 +156,7 @@ const formRules = reactive<FormRules<SceneParamFormModel>>({
     { validator: validateParamName, trigger: 'blur' },
   ],
   paramLabel: [
-    { required: true, message: '请输入显示名称', trigger: 'blur' },
+    { required: true, message: '请输入参数显示名', trigger: 'blur' },
     { max: 20, message: '显示名称不能超过 20 个字符', trigger: 'blur' },
   ],
   paramType: [{ required: true, message: '请选择参数类型', trigger: 'change' }],
@@ -162,11 +164,20 @@ const formRules = reactive<FormRules<SceneParamFormModel>>({
   isRequired: [{ required: true, message: '请选择是否必填', trigger: 'change' }],
 })
 
+const getNextSortOrder = () => {
+  const maxSortOrder = props.existingParams.reduce(
+    (currentMax, item) => Math.max(currentMax, item.sortOrder),
+    0,
+  )
+
+  return Math.min(maxSortOrder + 1, MAX_SORT_ORDER)
+}
+
 const resetForm = () => {
   formModel.paramName = ''
   formModel.paramLabel = ''
   formModel.paramType = ''
-  formModel.sortOrder = null
+  formModel.sortOrder = getNextSortOrder()
   formModel.isRequired = 0
 
   nextTick(() => {
@@ -267,7 +278,7 @@ const submitForm = async () => {
     return
   }
 
-  if (duplicateNameTip.value) {
+  if (isCreateMode.value && duplicateNameTip.value) {
     ElMessage.warning(duplicateNameTip.value)
   }
 
@@ -315,6 +326,7 @@ const submitForm = async () => {
               <el-tag
                 v-for="template in usageInfo.templates"
                 :key="template.templateId || template.templateName"
+                class="scene-param-dialog__template-tag"
                 effect="plain"
               >
                 {{ getUsageTemplateText(template) }}
@@ -340,7 +352,7 @@ const submitForm = async () => {
             v-model.trim="formModel.paramLabel"
             maxlength="20"
             show-word-limit
-            placeholder="请输入显示名称"
+            placeholder="请输入参数显示名"
           />
         </el-form-item>
         <el-form-item label="参数类型" prop="paramType">
@@ -367,6 +379,7 @@ const submitForm = async () => {
             class="scene-param-dialog__sort-input"
             :controls="false"
             :min="1"
+            :max="MAX_SORT_ORDER"
             :precision="0"
             placeholder="可不填"
           />
@@ -394,18 +407,41 @@ const submitForm = async () => {
 
 .scene-param-dialog__usage {
   margin-bottom: 16px;
+
+  :deep(.el-alert__content) {
+    min-width: 0;
+    width: 100%;
+  }
 }
 
 .scene-param-dialog__usage-content {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  min-width: 0;
 }
 
 .scene-param-dialog__templates {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
+  min-width: 0;
+  width: 100%;
+}
+
+.scene-param-dialog__template-tag {
+  max-width: 100%;
+  height: auto;
+  min-height: 24px;
+  padding-top: 3px;
+  padding-bottom: 3px;
+
+  :deep(.el-tag__content) {
+    min-width: 0;
+    line-height: 18px;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
 }
 
 .scene-param-dialog__select {

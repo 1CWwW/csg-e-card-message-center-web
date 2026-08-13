@@ -8,6 +8,10 @@ export default defineConfig(({ mode }) => {
   return {
     base: env.VITE_APP_BASE_URL || '/',
     plugins: [vue()],
+    build: {
+      target: 'es2015',
+      cssTarget: 'chrome61',
+    },
     server: {
       proxy: {
         '/xxzx-api': {

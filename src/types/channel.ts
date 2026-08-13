@@ -1,4 +1,5 @@
 export type ChannelStatus = 0 | 1
+export type ChannelSortOrder = 'ASC' | 'DESC'
 
 export const CHANNEL_TYPE_OPTIONS = [
   { value: 'SMS', label: '短信' },
@@ -39,6 +40,8 @@ export interface ChannelQuery {
   channelType?: ChannelType
   status?: ChannelStatus
   unitId?: string
+  sortField?: 'priority'
+  sortOrder?: ChannelSortOrder
 }
 
 export interface ChannelPageData {

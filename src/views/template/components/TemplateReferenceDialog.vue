@@ -27,7 +27,7 @@ const query = reactive({
   templateName: '',
   sceneId: '',
   pageNum: 1,
-  pageSize: 10,
+  pageSize: 20,
 })
 const references = ref<TemplateListItem[]>([])
 const sceneOptions = ref<TemplateSceneOption[]>([])
@@ -223,8 +223,8 @@ onBeforeUnmount(() => {
           :value="scene.value"
         />
       </el-select>
-      <el-button type="primary" @click="resetAndLoad">查询</el-button>
-      <el-button @click="resetQuery">重置</el-button>
+      <el-button type="primary" :disabled="loading" @click="resetAndLoad">查询</el-button>
+      <el-button :disabled="loading" @click="resetQuery">重置</el-button>
     </div>
 
     <el-alert

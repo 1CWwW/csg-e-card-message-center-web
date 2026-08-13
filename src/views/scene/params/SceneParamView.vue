@@ -31,7 +31,7 @@ const router = useRouter()
 const sceneDetail = ref<SceneItem | null>(null)
 const paramList = ref<SceneParamItem[]>([])
 const pageNum = ref(1)
-const pageSize = ref(10)
+const pageSize = ref(20)
 const sceneLoading = ref(false)
 const listLoading = ref(false)
 const loadFailed = ref(false)
@@ -257,13 +257,6 @@ const handleSortChange = async (row: SceneParamItem, sortOrder: number) => {
   }
 
   if (sortOrder === row.sortOrder) {
-    return
-  }
-
-  const duplicated = paramList.value.some((item) => item.id !== row.id && item.sortOrder === sortOrder)
-
-  if (duplicated) {
-    ElMessage.warning('排序号不能重复')
     return
   }
 
