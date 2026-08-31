@@ -52,6 +52,8 @@ const emit = defineEmits<{
 
 const formRef = ref<FormInstance>()
 const allUnits = ref(true)
+const MAX_ELINK_PRIORITY = 99999
+const SENDER_NUMBER_PATTERN = /^1[3-9]\d{9}$/
 const EMAIL_PATTERN = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/
 
 const formModel = reactive<ChannelFormModel>({
@@ -86,13 +88,58 @@ const validatePriority = (_rule: unknown, value: number | undefined, callback: (
     return
   }
 
+  if (currentChannelType.value === 'ELINK' && value > MAX_ELINK_PRIORITY) {
+    callback(new Error(`优先级必须是 1 至 ${MAX_ELINK_PRIORITY} 的整数`))
+    return
+  }
+
   callback()
 }
 
-const validateTypeConfig = (_rule: unknown, _value: string, callback: (error?: Error) => void) => {
-  if (currentChannelType.value === 'SMS' && !formModel.senderNumber.trim()) {
-    callback(new Error('请输入发送号码'))
+const handlePriorityKeydown = (event: KeyboardEvent) => {
+  if (currentChannelType.value !== 'ELINK' || !/^\d$/.test(event.key)) {
     return
+  }
+
+  const input = event.target as HTMLInputElement | null
+  if (!input) {
+    return
+  }
+
+  const selectionLength = (input.selectionEnd ?? 0) - (input.selectionStart ?? 0)
+  const digitLength = input.value.replace(/\D/g, '').length
+
+  if (digitLength >= 5 && selectionLength === 0) {
+    event.preventDefault()
+  }
+}
+
+const handlePriorityInput = (value: number | undefined) => {
+  if (
+    currentChannelType.value !== 'ELINK'
+    || typeof value !== 'number'
+    || !Number.isFinite(value)
+    || value <= MAX_ELINK_PRIORITY
+  ) {
+    return
+  }
+
+  formModel.priority = Number(String(Math.trunc(value)).slice(0, 5))
+}
+
+const validateTypeConfig = (_rule: unknown, _value: string, callback: (error?: Error) => void) => {
+  if (currentChannelType.value === 'SMS') {
+    const senderNumber = formModel.senderNumber.trim()
+
+    if (!senderNumber) {
+      callback(new Error('请输入发送号码'))
+      return
+    }
+
+    if (!SENDER_NUMBER_PATTERN.test(senderNumber)) {
+      callback(new Error('请输入正确的手机号码'))
+      return
+    }
   }
 
   if (currentChannelType.value === 'EMAIL') {
@@ -122,8 +169,14 @@ const formRules = reactive<FormRules<ChannelFormModel>>({
   ],
   channelType: [{ required: true, message: '请选择渠道类型', trigger: 'change' }],
   senderNumber: [{ validator: validateTypeConfig, trigger: 'blur' }],
-  senderEmail: [{ validator: validateTypeConfig, trigger: 'blur' }],
-  appId: [{ validator: validateTypeConfig, trigger: 'blur' }],
+  senderEmail: [
+    { required: true, message: '请输入发送邮箱', trigger: 'blur' },
+    { validator: validateTypeConfig, trigger: 'blur' },
+  ],
+  appId: [
+    { required: true, message: '请输入应用ID', trigger: 'blur' },
+    { validator: validateTypeConfig, trigger: 'blur' },
+  ],
   priority: [{ validator: validatePriority, trigger: 'blur' }],
   status: [{ required: true, message: '请选择状态', trigger: 'change' }],
 })
@@ -316,12 +369,17 @@ const submitForm = async () => {
           />
         </el-form-item>
         <el-form-item v-if="currentChannelType === 'SMS'" label="发送号码" prop="senderNumber" required>
-          <el-input v-model.trim="formModel.senderNumber" placeholder="请输入短信发送号码" />
+          <el-input
+            v-model.trim="formModel.senderNumber"
+            inputmode="numeric"
+            maxlength="11"
+            placeholder="请输入11位手机号码"
+          />
         </el-form-item>
         <el-form-item v-if="currentChannelType === 'EMAIL'" label="发送邮箱" prop="senderEmail" required>
           <el-input v-model.trim="formModel.senderEmail" placeholder="请输入邮件发送邮箱" />
         </el-form-item>
-        <el-form-item v-if="currentChannelType === 'ELINK'" label="应用ID" prop="appId">
+        <el-form-item v-if="currentChannelType === 'ELINK'" label="应用ID" prop="appId" required>
           <el-input v-model.trim="formModel.appId" placeholder="请输入 eLink 应用ID" />
         </el-form-item>
         <el-form-item v-if="currentChannelType === 'IN_APP'" label="类型参数">
@@ -333,8 +391,11 @@ const submitForm = async () => {
             class="channel-dialog__priority"
             controls-position="right"
             :min="1"
+            :max="currentChannelType === 'ELINK' ? MAX_ELINK_PRIORITY : undefined"
             :precision="0"
             :step="1"
+            @keydown="handlePriorityKeydown"
+            @input="handlePriorityInput"
           />
           <span class="channel-dialog__hint">数字越小优先级越高</span>
         </el-form-item>

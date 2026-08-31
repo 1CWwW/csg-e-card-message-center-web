@@ -422,6 +422,15 @@ export class TemplateConnectionOverlay {
 
   getLinks = () => [...this.links]
 
+  getPrimaryLeftPortPoint = (block: Blockly.BlockSvg) => {
+    const ports = getBlockPorts(block)
+    const primaryPort =
+      ports.find((port) => port.side === 'left' && port.key === 'input') ??
+      ports.find((port) => port.side === 'left')
+
+    return primaryPort ? getPortPoint(primaryPort) : getBlockPoint(block, 'left')
+  }
+
   setLinks = (links: TemplateNodeLink[]) => {
     this.links = this.normalizeLinks(links)
     this.scheduleRender()

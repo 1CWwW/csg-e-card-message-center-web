@@ -20,6 +20,7 @@ const emit = defineEmits<{
   delete: [row: SceneParamItem]
 }>()
 
+const MAX_SORT_ORDER_LENGTH = 5
 const sortInputs = reactive<Record<string, string>>({})
 
 watch(
@@ -47,7 +48,7 @@ const formatDateTime = (value: string) => {
 }
 
 const handleSortInput = (row: SceneParamItem, value: string) => {
-  sortInputs[row.id] = value.replace(/\D/g, '')
+  sortInputs[row.id] = value.replace(/\D/g, '').slice(0, MAX_SORT_ORDER_LENGTH)
 }
 
 const resetSortInput = (row: SceneParamItem) => {
@@ -63,8 +64,8 @@ const handleSortBlur = (row: SceneParamItem, event: FocusEvent) => {
   const target = event.target as HTMLInputElement | null
   const rawValue = (target?.value || sortInputs[row.id] || '').trim()
 
-  if (!/^[1-9]\d*$/.test(rawValue)) {
-    ElMessage.warning('排序必须填写正整数')
+  if (!/^[1-9]\d{0,4}$/.test(rawValue)) {
+    ElMessage.warning('排序必须填写 1 至 99999 的整数')
     resetSortInput(row)
     return
   }

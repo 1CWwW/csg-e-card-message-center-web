@@ -251,8 +251,8 @@ const handleSortChange = async (row: SceneParamItem, sortOrder: number) => {
     return
   }
 
-  if (!Number.isInteger(sortOrder) || sortOrder < 1) {
-    ElMessage.warning('排序必须填写正整数')
+  if (!Number.isInteger(sortOrder) || sortOrder < 1 || sortOrder > 99999) {
+    ElMessage.warning('排序必须填写 1 至 99999 的整数')
     return
   }
 

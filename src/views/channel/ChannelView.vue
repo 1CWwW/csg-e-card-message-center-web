@@ -22,7 +22,7 @@ import {
   isMockUnitTreeEnabled,
   resolveUnitNodes,
 } from '../../services/unit-tree-service'
-import { CHANNEL_TYPE_OPTIONS } from '../../types/channel'
+import { CHANNEL_TYPE_OPTIONS, getChannelTypeLabel } from '../../types/channel'
 import ChannelFormDialog from './components/ChannelFormDialog.vue'
 import ChannelSearchForm from './components/ChannelSearchForm.vue'
 import ChannelTable from './components/ChannelTable.vue'
@@ -223,6 +223,27 @@ const handleUpdate = async (form: ChannelUpdateForm) => {
   submitLoading.value = true
 
   try {
+    const uniqueUnitCount = currentChannel.value.uniqueUnitCount ?? 0
+    const isDisabling = currentChannel.value.status === 1 && form.status === 0
+
+    if (isDisabling && uniqueUnitCount > 0) {
+      const channelTypeLabel = getChannelTypeLabel(currentChannel.value.channelType)
+
+      try {
+        await ElMessageBox.confirm(
+          `该渠道是${uniqueUnitCount}个单位的唯一${channelTypeLabel}渠道，停用后这些单位将无法发送。确认停用？`,
+          '停用确认',
+          {
+            type: 'warning',
+            confirmButtonText: '确认停用',
+            cancelButtonText: '取消',
+          },
+        )
+      } catch {
+        return
+      }
+    }
+
     await updateChannel(currentChannel.value.id, form)
     ElMessage.success('编辑渠道成功')
     dialogVisible.value = false
@@ -233,11 +254,28 @@ const handleUpdate = async (form: ChannelUpdateForm) => {
 }
 
 const handleDelete = async (row: ChannelItem) => {
-  const unitRiskCount = row.uniqueUnitCount || row.unitCount || 0
-  const riskText = unitRiskCount > 0 ? `当前渠道关联 ${unitRiskCount} 个单位，删除后相关单位将无法匹配该渠道。` : ''
+  let uniqueUnitCount = row.uniqueUnitCount
+
+  if (uniqueUnitCount == null) {
+    operationLoadingId.value = row.id
+
+    try {
+      const channelDetail = await getChannelDetail(row.id)
+      uniqueUnitCount = channelDetail.uniqueUnitCount
+    } catch {
+      return
+    } finally {
+      operationLoadingId.value = ''
+    }
+  }
+
+  const hasUniqueUnitRisk = (uniqueUnitCount ?? 0) > 0
+  const confirmMessage = hasUniqueUnitRisk
+    ? '如果该渠道是某些单位的唯一推送通道，删除后这些单位将无法通过该渠道类型发送消息。'
+    : `确认删除渠道“${row.channelName}”吗？`
 
   try {
-    await ElMessageBox.confirm(`确认删除渠道“${row.channelName}”吗？${riskText}`, '删除确认', {
+    await ElMessageBox.confirm(confirmMessage, '删除确认', {
       type: 'warning',
       confirmButtonText: '确认删除',
       cancelButtonText: '取消',

@@ -1,11 +1,14 @@
 <script setup lang="ts">
 import { computed, nextTick, reactive, ref, watch } from 'vue'
 import { Document } from '@element-plus/icons-vue'
+import { ElMessageBox } from 'element-plus'
 import type { FormInstance, FormRules } from 'element-plus'
 import StatusSwitch from '../../../components/business/StatusSwitch.vue'
 import UnitTreeSelect from '../../../components/business/UnitTreeSelect.vue'
+import { getSceneParamList } from '../../../api/scene-param'
 import { CHANNEL_TYPE_OPTIONS } from '../../../types/channel'
 import ChannelTypeIcon from '../../channel/components/ChannelTypeIcon.vue'
+import type { SceneParamItem } from '../../../types/scene-param'
 import type {
   TemplateCreateForm,
   TemplateDetail,
@@ -51,6 +54,12 @@ const emit = defineEmits<{
 
 const formRef = ref<FormInstance>()
 const allUnits = ref(true)
+const createSceneParams = ref<SceneParamItem[]>([])
+const sceneParamsLoading = ref(false)
+const sceneParamsFailed = ref(false)
+const confirmedSceneId = ref('')
+const sceneChangeConfirming = ref(false)
+let sceneParamsRequestToken = 0
 const formModel = reactive<TemplateFormModel>({
   templateName: '',
   sceneId: '',
@@ -61,12 +70,72 @@ const formModel = reactive<TemplateFormModel>({
 
 const isCreateMode = computed(() => props.mode === 'create')
 const dialogTitle = computed(() => (isCreateMode.value ? '新增模板' : '编辑模板'))
-const sceneParams = computed(() => props.templateDetail?.sceneParams ?? [])
+const sceneParams = computed(() => (
+  !isCreateMode.value && formModel.sceneId === props.templateDetail?.sceneId
+    ? props.templateDetail?.sceneParams ?? []
+    : createSceneParams.value
+))
+const selectableScenes = computed<TemplateSceneOption[]>(() => {
+  const scenes = [...props.scenes]
+  const detail = props.templateDetail
+
+  if (
+    !isCreateMode.value &&
+    detail?.sceneId &&
+    !scenes.some((scene) => scene.value === detail.sceneId)
+  ) {
+    scenes.unshift({
+      value: detail.sceneId,
+      label: detail.sceneName || detail.sceneCode || detail.sceneId,
+      status: 1,
+      sceneCode: detail.sceneCode,
+      sceneName: detail.sceneName,
+    })
+  }
+
+  return scenes
+})
+const formatSceneLabel = (scene: TemplateSceneOption) => {
+  if (!scene.sceneCode) {
+    return scene.label
+  }
+
+  return `${scene.sceneCode} - ${scene.sceneName || scene.label}`
+}
+
+const loadCreateSceneParams = async (sceneId: string) => {
+  const requestToken = ++sceneParamsRequestToken
+  createSceneParams.value = []
+  sceneParamsFailed.value = false
+
+  if (!sceneId) {
+    sceneParamsLoading.value = false
+    return
+  }
+
+  sceneParamsLoading.value = true
+
+  try {
+    const params = await getSceneParamList(sceneId)
+
+    if (requestToken === sceneParamsRequestToken) {
+      createSceneParams.value = params
+    }
+  } catch {
+    if (requestToken === sceneParamsRequestToken) {
+      sceneParamsFailed.value = true
+    }
+  } finally {
+    if (requestToken === sceneParamsRequestToken) {
+      sceneParamsLoading.value = false
+    }
+  }
+}
 
 const formRules = reactive<FormRules<TemplateFormModel>>({
   templateName: [
     { required: true, message: '请输入模板名称', trigger: 'blur' },
-    { max: 50, message: '模板名称不能超过 50 个字符', trigger: 'blur' },
+    { max: 50, message: '不超过50字，同场景下需唯一', trigger: 'blur' },
   ],
   sceneId: [{ required: true, message: '请选择所属场景', trigger: 'change' }],
   channelType: [{ required: true, message: '请选择渠道类型', trigger: 'change' }],
@@ -87,6 +156,8 @@ const resetCreateForm = () => {
 const fillEditForm = (detail: TemplateDetail) => {
   formModel.templateName = detail.templateName || ''
   formModel.sceneId = detail.sceneId || ''
+  confirmedSceneId.value = formModel.sceneId
+  createSceneParams.value = []
   formModel.channelType = detail.channelType || ''
   formModel.status = detail.status ?? 0
   formModel.unitIds = [...new Set(detail.unitIds ?? [])]
@@ -102,9 +173,49 @@ watch(allUnits, (checked) => {
 })
 
 watch(
+  () => formModel.sceneId,
+  (sceneId) => {
+    if (props.modelValue && isCreateMode.value) {
+      void loadCreateSceneParams(sceneId)
+    }
+  },
+)
+
+const handleSceneChange = async (sceneId: string) => {
+  if (isCreateMode.value || sceneId === confirmedSceneId.value || sceneChangeConfirming.value) {
+    return
+  }
+
+  const previousSceneId = confirmedSceneId.value
+  sceneChangeConfirming.value = true
+
+  try {
+    await ElMessageBox.confirm(
+      '修改场景将导致当前Blockly内容中的场景参数引用失效，确认修改？',
+      '修改所属场景',
+      {
+        type: 'warning',
+        confirmButtonText: '确认修改',
+        cancelButtonText: '取消',
+      },
+    )
+    confirmedSceneId.value = sceneId
+    await loadCreateSceneParams(sceneId)
+  } catch {
+    formModel.sceneId = previousSceneId
+  } finally {
+    sceneChangeConfirming.value = false
+  }
+}
+
+watch(
   () => props.modelValue,
   (visible) => {
     if (!visible) {
+      sceneParamsRequestToken += 1
+      createSceneParams.value = []
+      sceneParamsLoading.value = false
+      sceneParamsFailed.value = false
       return
     }
 
@@ -154,6 +265,7 @@ const submitForm = async () => {
 
   emit('submit-update', {
     templateName: formModel.templateName.trim(),
+    sceneId: formModel.sceneId,
     channelType: formModel.channelType,
     status: formModel.status,
     unitIds: [...formModel.unitIds],
@@ -192,94 +304,77 @@ const submitForm = async () => {
           </span>
         </el-form-item>
 
-        <template v-if="isCreateMode">
-          <el-form-item label="所属场景" prop="sceneId">
-            <el-select
-              v-model="formModel.sceneId"
-              class="template-form-dialog__control"
-              filterable
-              :loading="sceneLoading"
-              placeholder="搜索场景编码或名称..."
-              @visible-change="emit('scene-visible-change', $event)"
-            >
-              <el-option
-                v-for="scene in scenes"
-                :key="scene.value"
-                :label="scene.label"
-                :value="scene.value"
-              />
-            </el-select>
-          </el-form-item>
-          <el-form-item label="渠道类型" prop="channelType">
-            <el-radio-group
-              v-model="formModel.channelType"
-              class="template-form-dialog__channel-group"
-            >
-              <el-radio
-                v-for="channelType in CHANNEL_TYPE_OPTIONS"
-                :key="channelType.value"
-                :value="channelType.value"
-              >
-                <span class="template-form-dialog__channel">
-                  <ChannelTypeIcon :channel-type="channelType.value" />
-                  <span>{{ channelType.label }}</span>
-                </span>
-              </el-radio>
-            </el-radio-group>
-          </el-form-item>
-        </template>
-
-        <template v-else>
-          <el-form-item label="所属场景">
-            <el-input
-              :model-value="templateDetail?.sceneName || templateDetail?.sceneCode || '-'"
-              readonly
+        <el-form-item label="所属场景" prop="sceneId">
+          <el-select
+            v-model="formModel.sceneId"
+            class="template-form-dialog__control"
+            filterable
+            :loading="sceneLoading"
+            :disabled="sceneChangeConfirming"
+            placeholder="搜索场景编码或名称..."
+            @change="handleSceneChange"
+            @visible-change="emit('scene-visible-change', $event)"
+          >
+            <el-option
+              v-for="scene in selectableScenes"
+              :key="scene.value"
+              :label="formatSceneLabel(scene)"
+              :value="scene.value"
             />
-            <span class="template-form-dialog__hint">编辑时不可修改所属场景</span>
-          </el-form-item>
+          </el-select>
+        </el-form-item>
 
-          <div class="template-form-dialog__params">
-            <div class="template-form-dialog__params-title">
-              <el-icon><Document /></el-icon>
-              <span>该场景的参数列表</span>
-            </div>
-            <div v-if="sceneParams.length" class="template-form-dialog__params-list">
-              <div
-                v-for="sceneParam in sceneParams"
-                :key="sceneParam.id"
-                class="template-form-dialog__param"
-              >
-                <span
-                  class="template-form-dialog__param-dot"
-                  :class="`is-${sceneParam.paramType.toLowerCase()}`"
-                />
-                <span class="template-form-dialog__param-name">
-                  {{ sceneParam.paramLabel || sceneParam.paramName }}
-                </span>
-                <span class="template-form-dialog__param-type">{{ sceneParam.paramType }}</span>
-              </div>
-            </div>
-            <el-empty v-else description="该场景暂无参数" :image-size="42" />
+        <div
+          v-if="!isCreateMode || formModel.sceneId"
+          v-loading="sceneParamsLoading"
+          class="template-form-dialog__params"
+        >
+          <div class="template-form-dialog__params-title">
+            <el-icon><Document /></el-icon>
+            <span>该场景的参数列表</span>
           </div>
-
-          <el-form-item label="渠道类型" prop="channelType">
-            <el-radio-group
-              v-model="formModel.channelType"
-              class="template-form-dialog__channel-group"
+          <div v-if="sceneParamsFailed" class="template-form-dialog__params-error">
+            <span>暂时无法加载参数列表</span>
+            <el-button link type="primary" @click="loadCreateSceneParams(formModel.sceneId)">
+              重新加载
+            </el-button>
+          </div>
+          <div v-else-if="sceneParams.length" class="template-form-dialog__params-list">
+            <div
+              v-for="sceneParam in sceneParams"
+              :key="sceneParam.id"
+              class="template-form-dialog__param"
             >
-              <el-radio
-                v-for="channelType in CHANNEL_TYPE_OPTIONS"
-                :key="channelType.value"
-                :value="channelType.value"
-              >
-                <span class="template-form-dialog__channel">
-                  <ChannelTypeIcon :channel-type="channelType.value" />
-                  <span>{{ channelType.label }}</span>
-                </span>
-              </el-radio>
-            </el-radio-group>
-          </el-form-item>
-        </template>
+              <span
+                class="template-form-dialog__param-dot"
+                :class="`is-${sceneParam.paramType.toLowerCase()}`"
+              />
+              <span class="template-form-dialog__param-name">
+                {{ sceneParam.paramLabel || sceneParam.paramName }}
+              </span>
+              <span class="template-form-dialog__param-type">{{ sceneParam.paramType }}</span>
+            </div>
+          </div>
+          <el-empty v-else-if="!sceneParamsLoading" description="该场景暂无参数" :image-size="42" />
+        </div>
+
+        <el-form-item label="渠道类型" prop="channelType">
+          <el-radio-group
+            v-model="formModel.channelType"
+            class="template-form-dialog__channel-group"
+          >
+            <el-radio
+              v-for="channelType in CHANNEL_TYPE_OPTIONS"
+              :key="channelType.value"
+              :value="channelType.value"
+            >
+              <span class="template-form-dialog__channel">
+                <ChannelTypeIcon :channel-type="channelType.value" />
+                <span>{{ channelType.label }}</span>
+              </span>
+            </el-radio>
+          </el-radio-group>
+        </el-form-item>
 
         <el-form-item label="适用单位范围">
           <el-checkbox
@@ -451,6 +546,14 @@ const submitForm = async () => {
 .template-form-dialog__params-list {
   display: grid;
   gap: 8px;
+}
+
+.template-form-dialog__params-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--el-color-danger);
+  font-size: 13px;
 }
 
 .template-form-dialog__param {

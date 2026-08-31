@@ -140,6 +140,7 @@ export interface TemplateCreateForm {
 
 export interface TemplateUpdateForm {
   templateName: string
+  sceneId: string
   channelType: string
   status: TemplateStatus
   unitIds: string[]
@@ -148,16 +149,21 @@ export interface TemplateUpdateForm {
 export interface TemplateCopyForm {
   templateName: string
   sceneId: string
+  channelType: string
   copyContent: boolean
   unitIds: string[]
 }
 
 export interface TemplateCopyResult {
-  newTemplateId?: string
+  newTemplateId: string
   templateName?: string
+  sceneId: string
+  channelType: string
   hasContent?: boolean
 }
 
 export interface TemplateSceneOption extends FilterOption {
   status: TemplateStatus
+  sceneCode?: string
+  sceneName?: string
 }

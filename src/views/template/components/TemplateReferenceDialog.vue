@@ -242,47 +242,51 @@ onBeforeUnmount(() => {
 
     <el-table
       v-loading="loading"
+      class="record-table template-reference-dialog__table"
       :data="tableData"
+      border
+      table-layout="fixed"
       empty-text="暂无可用参考模板"
-      max-height="420"
+      max-height="440"
+      scrollbar-always-on
     >
-      <el-table-column prop="templateName" label="模板名称" min-width="190" show-overflow-tooltip />
-      <el-table-column prop="sceneName" label="所属场景" min-width="140" show-overflow-tooltip />
-      <el-table-column label="渠道类型" width="110">
-        <template #default="{ row }">
-          {{ getChannelTypeLabel(row.channelType, row.channelTypeDesc) }}
-        </template>
-      </el-table-column>
-      <el-table-column label="内容" width="92" align="center">
-        <template #default="{ row }">
-          <el-tag :type="row.hasContent ? 'success' : 'info'" effect="light">
-            {{ row.hasContent ? '已编辑' : '未编辑' }}
-          </el-tag>
-        </template>
-      </el-table-column>
-      <el-table-column label="状态" width="80" align="center">
-        <template #default="{ row }">
-          <el-tag :type="row.status === 1 ? 'success' : 'info'" effect="light">
-            {{ row.statusDesc || (row.status === 1 ? '启用' : '停用') }}
-          </el-tag>
-        </template>
-      </el-table-column>
-      <el-table-column label="更新时间" width="160">
-        <template #default="{ row }">{{ formatDateTime(row.updatedAt) }}</template>
-      </el-table-column>
-      <el-table-column label="操作" width="90" fixed="right" align="center">
-        <template #default="{ row }">
-          <el-button
-            link
-            type="primary"
-            :loading="loadingId === row.id"
-            :disabled="Boolean(loadingId) && loadingId !== row.id"
-            @click="loadReference(row)"
-          >
-            加载
-          </el-button>
-        </template>
-      </el-table-column>
+        <el-table-column prop="templateName" label="模板名称" width="220" show-overflow-tooltip />
+        <el-table-column prop="sceneName" label="所属场景" width="160" show-overflow-tooltip />
+        <el-table-column label="渠道类型" width="120">
+          <template #default="{ row }">
+            {{ getChannelTypeLabel(row.channelType, row.channelTypeDesc) }}
+          </template>
+        </el-table-column>
+        <el-table-column label="内容" width="92" align="center">
+          <template #default="{ row }">
+            <el-tag :type="row.hasContent ? 'success' : 'info'" effect="light">
+              {{ row.hasContent ? '已编辑' : '未编辑' }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="状态" width="80" align="center">
+          <template #default="{ row }">
+            <el-tag :type="row.status === 1 ? 'success' : 'info'" effect="light">
+              {{ row.statusDesc || (row.status === 1 ? '启用' : '停用') }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="更新时间" width="168">
+          <template #default="{ row }">{{ formatDateTime(row.updatedAt) }}</template>
+        </el-table-column>
+        <el-table-column label="操作" width="82" fixed="right" align="center">
+          <template #default="{ row }">
+            <el-button
+              link
+              type="primary"
+              :loading="loadingId === row.id"
+              :disabled="Boolean(loadingId) && loadingId !== row.id"
+              @click="loadReference(row)"
+            >
+              加载
+            </el-button>
+          </template>
+        </el-table-column>
     </el-table>
 
     <div class="template-reference-dialog__pager">
@@ -315,8 +319,12 @@ onBeforeUnmount(() => {
 
 .template-reference-dialog__pager {
   display: flex;
+  align-items: center;
   justify-content: flex-end;
-  margin-top: 14px;
+  padding: 12px 16px;
+  border: 1px solid var(--app-border-color);
+  border-top: 0;
+  background: #f8fafc;
 }
 
 :global(.template-reference-dialog-shell) {
@@ -340,19 +348,12 @@ onBeforeUnmount(() => {
   padding: 18px 22px 22px;
 }
 
-:global(.template-reference-dialog-shell .el-table) {
-  --el-table-header-bg-color: #f8fafc;
-  --el-table-header-text-color: #65748a;
-  --el-table-row-hover-bg-color: #f6f9ff;
-  border-radius: 10px;
+.template-reference-dialog__table {
+  --el-table-header-bg-color: #f1f5f9;
+  --el-table-header-text-color: #64748b;
+  --el-table-row-hover-bg-color: #eff6ff;
+  width: 100%;
+  border-bottom: 0;
 }
 
-:global(.template-reference-dialog-shell .el-table th.el-table__cell) {
-  font-size: 12px;
-  font-weight: 600;
-}
-
-:global(.template-reference-dialog-shell .el-table td.el-table__cell) {
-  font-size: 13px;
-}
 </style>

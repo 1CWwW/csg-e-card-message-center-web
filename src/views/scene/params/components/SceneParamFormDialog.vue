@@ -14,7 +14,7 @@ import StatusSwitch from '../../../../components/business/StatusSwitch.vue'
 
 type DialogMode = 'create' | 'edit'
 
-const MAX_SORT_ORDER = 2147483647
+const MAX_SORT_ORDER = 99999
 
 interface SceneParamFormModel {
   paramName: string
@@ -148,6 +148,32 @@ const validateSortOrder = (_rule: unknown, value: number | null, callback: (erro
   }
 
   callback()
+}
+
+const handleSortOrderKeydown = (event: KeyboardEvent) => {
+  if (!/^\d$/.test(event.key)) {
+    return
+  }
+
+  const input = event.target as HTMLInputElement | null
+  if (!input) {
+    return
+  }
+
+  const selectionLength = (input.selectionEnd ?? 0) - (input.selectionStart ?? 0)
+  const digitLength = input.value.replace(/\D/g, '').length
+
+  if (digitLength >= 5 && selectionLength === 0) {
+    event.preventDefault()
+  }
+}
+
+const handleSortOrderInput = (value: number | undefined) => {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= MAX_SORT_ORDER) {
+    return
+  }
+
+  formModel.sortOrder = Number(String(Math.trunc(value)).slice(0, 5))
 }
 
 const formRules = reactive<FormRules<SceneParamFormModel>>({
@@ -382,6 +408,8 @@ const submitForm = async () => {
             :max="MAX_SORT_ORDER"
             :precision="0"
             placeholder="可不填"
+            @keydown="handleSortOrderKeydown"
+            @input="handleSortOrderInput"
           />
         </el-form-item>
       </el-form>

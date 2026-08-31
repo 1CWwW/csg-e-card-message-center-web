@@ -37,6 +37,7 @@ import TemplateBlocklyToolbox from './components/TemplateBlocklyToolbox.vue'
 import type { TemplateToolboxBlockState } from './components/TemplateBlocklyToolbox.vue'
 import TemplateReferenceDialog from './components/TemplateReferenceDialog.vue'
 import {
+  rebindSceneParamBlocks,
   registerTemplateBlocks,
   syncSceneParamBlockLabels,
   validateSceneParamBlocks,
@@ -93,7 +94,6 @@ interface TemplateClipboardBlock {
 interface TemplateBlockClipboard {
   blocks: TemplateClipboardBlock[]
   links: TemplateNodeLink[]
-  pasteCount: number
 }
 
 interface SelectionDragState {
@@ -298,9 +298,6 @@ const handleCanvasPointerMove = (event: PointerEvent) => {
     lastCanvasPointer?.clientX !== event.clientX ||
     lastCanvasPointer?.clientY !== event.clientY
   ) {
-    if (blockClipboard.value) {
-      blockClipboard.value.pasteCount = 0
-    }
     lastCanvasPointer = { clientX: event.clientX, clientY: event.clientY }
   }
 }
@@ -1404,6 +1401,7 @@ const initializeWorkspace = async () => {
     saveErrors.value = []
   })
 
+  let reboundCount = 0
   const document = parseBlocklyDocument(templateDetail.value?.blocklyJson)
   if (document) {
     restoringWorkspace = true
@@ -1412,8 +1410,9 @@ const initializeWorkspace = async () => {
       connectionOverlay.setLinks(
         rewriteMathOperandPrefixLinks(readTemplateLinks(document.workspace)),
       )
+      reboundCount = rebindSceneParamBlocks(workspace, toolboxData.value)
       syncSceneParamBlockLabels(workspace, toolboxData.value)
-      validateSceneParamBlocks(workspace, toolboxData.value)
+      saveErrors.value = validateSceneParamBlocks(workspace, toolboxData.value)
     } finally {
       restoringWorkspace = false
     }
@@ -1424,6 +1423,7 @@ const initializeWorkspace = async () => {
   refreshWorkspaceState()
   resizeWorkspace()
   attachResizeObserver()
+  return reboundCount
 }
 
 const loadEditor = async () => {
@@ -1457,7 +1457,7 @@ const loadEditor = async () => {
     }
     resetPreviewValues(toolboxData.value)
     await nextTick()
-    await initializeWorkspace()
+    const reboundCount = await initializeWorkspace()
     await new Promise((resolve) => window.setTimeout(resolve, 80))
 
     if (workspace) {
@@ -1465,7 +1465,10 @@ const loadEditor = async () => {
     }
 
     ready.value = true
-    dirty.value = false
+    dirty.value = reboundCount > 0
+    if (reboundCount > 0) {
+      ElMessage.info(`已自动关联 ${reboundCount} 个当前场景参数，请保存更新`)
+    }
   } catch (error) {
     templateDetail.value = null
     toolboxData.value = null
@@ -1474,6 +1477,46 @@ const loadEditor = async () => {
   } finally {
     loading.value = false
   }
+}
+
+const getSceneParamLabels = () => {
+  if (!workspace) {
+    return []
+  }
+
+  const labels = workspace.getAllBlocks(false).flatMap((block) => {
+    if (block.type !== 'scene_param_value' && block.type !== 'scene_param_ref') {
+      return []
+    }
+
+    const state: unknown = block.saveExtraState?.()
+    if (!isRecordValue(state)) {
+      return []
+    }
+
+    const label = state.paramLabel ?? state.paramName
+    return typeof label === 'string' && label.trim() ? [label.trim()] : []
+  })
+
+  return [...new Set(labels)]
+}
+
+const formatContentValidationErrors = (errors?: string[]) => {
+  const rawErrors = errors?.map((error) => error.trim()).filter(Boolean) ?? []
+  const paramLabels = getSceneParamLabels()
+
+  return [...new Set(rawErrors.map((error) => {
+    if (!error.includes('scene_param_value') && !error.includes('scene_param_ref')) {
+      return error
+    }
+
+    const paramText = paramLabels.length > 0
+      ? `，涉及参数：${paramLabels.map((label) => `“${label}”`).join('、')}`
+      : ''
+    return error.includes('引用场景与模板场景不一致')
+      ? `场景参数引用与当前模板场景不一致${paramText}`
+      : `场景参数校验未通过${paramText}`
+  }))]
 }
 
 const saveContent = async () => {
@@ -1485,6 +1528,17 @@ const saveContent = async () => {
   saveErrors.value = []
 
   try {
+    if (toolboxData.value) {
+      rebindSceneParamBlocks(workspace, toolboxData.value)
+      const paramErrors = validateSceneParamBlocks(workspace, toolboxData.value)
+      if (paramErrors.length > 0) {
+        dirty.value = true
+        saveErrors.value = paramErrors
+        ElMessage.error(paramErrors[0])
+        return
+      }
+    }
+
     const links = connectionOverlay?.getLinks() ?? []
     const branchErrors = validateTemplateLinks(links)
     if (branchErrors.length > 0) {
@@ -1498,24 +1552,26 @@ const saveContent = async () => {
       schemaVersion: BLOCKLY_SCHEMA_VERSION,
       workspace: saveWorkspaceWithLinks(),
     }
+    const isEmptyWorkspace = workspace.getAllBlocks(false).length === 0
     const result = await saveTemplateContent(templateId.value, form)
+    const isSavedEmptyWorkspace = isEmptyWorkspace && result.hasContent === false
 
-    if (result.valid !== true) {
+    if (result.valid !== true && !isSavedEmptyWorkspace) {
       dirty.value = true
-      saveErrors.value =
-        result.errors?.filter((error) => Boolean(error.trim())) ?? ['模板内容校验未通过']
-      ElMessage.error('模板内容校验未通过')
+      const validationErrors = formatContentValidationErrors(result.errors)
+      saveErrors.value = validationErrors.length > 0 ? validationErrors : ['模板内容校验未通过']
+      ElMessage.error(saveErrors.value[0])
       return
     }
 
     if (templateDetail.value) {
       templateDetail.value.blocklyJson = result.blocklyJson ?? form
-      templateDetail.value.hasContent = result.hasContent ?? true
+      templateDetail.value.hasContent = isSavedEmptyWorkspace ? false : (result.hasContent ?? true)
       templateDetail.value.updatedAt = result.updatedAt ?? templateDetail.value.updatedAt
     }
 
     dirty.value = false
-    ElMessage.success('模板内容保存成功')
+    ElMessage.success(isSavedEmptyWorkspace ? '模板内容已清空' : '模板内容保存成功')
   } catch (error) {
     const message = readErrorMessage(error, '模板内容保存失败，请稍后重试。')
     dirty.value = true
@@ -1533,6 +1589,14 @@ const runPreview = async () => {
 
   previewing.value = true
   try {
+    rebindSceneParamBlocks(workspace, toolboxData.value)
+    const paramErrors = validateSceneParamBlocks(workspace, toolboxData.value)
+    if (paramErrors.length > 0) {
+      saveErrors.value = paramErrors
+      ElMessage.error(paramErrors[0])
+      return
+    }
+
     const links = connectionOverlay?.getLinks() ?? []
     const branchErrors = validateTemplateLinks(links)
     if (branchErrors.length > 0) {
@@ -1673,7 +1737,6 @@ const copySelectedBlocks = () => {
   blockClipboard.value = {
     blocks,
     links: links.map((link) => ({ ...link })),
-    pasteCount: 0,
   }
   ElMessage.success(`已复制 ${blocks.length} 个积木和 ${links.length} 条内部连线`)
 }
@@ -1705,18 +1768,31 @@ const pasteCopiedBlocks = () => {
   )
   const sourceX = Math.min(...clipboard.blocks.map((item) => item.state.x ?? 0))
   const sourceY = Math.min(...clipboard.blocks.map((item) => item.state.y ?? 0))
-  const offset = 16 * clipboard.pasteCount
-  clipboard.pasteCount += 1
+  const anchorIndex = clipboard.blocks.reduce((currentIndex, item, index, items) => {
+    const current = items[currentIndex]
+    if (!current) {
+      return index
+    }
+
+    const itemX = item.state.x ?? 0
+    const currentX = current.state.x ?? 0
+    const itemY = item.state.y ?? 0
+    const currentY = current.state.y ?? 0
+    return itemX < currentX || (itemX === currentX && itemY < currentY)
+      ? index
+      : currentIndex
+  }, 0)
   const blockIdMap = new Map<string, string>()
   const pastedIds: string[] = []
+  const pastedBlocks: Blockly.BlockSvg[] = []
   let blockStates: Blockly.serialization.blocks.State[]
 
   try {
     blockStates = clipboard.blocks.map((item) => {
       const state = structuredClone(item.state)
       state.id = Blockly.utils.idGenerator.genUid()
-      state.x = pasteOrigin.x + ((state.x ?? 0) - sourceX) + offset
-      state.y = pasteOrigin.y + ((state.y ?? 0) - sourceY) + offset
+      state.x = pasteOrigin.x + ((state.x ?? 0) - sourceX)
+      state.y = pasteOrigin.y + ((state.y ?? 0) - sourceY)
       return state
     })
   } catch {
@@ -1733,10 +1809,22 @@ const pasteCopiedBlocks = () => {
       }
       const pastedBlock = Blockly.serialization.blocks.append(state, workspace!, {
         recordUndo: true,
-      })
+      }) as Blockly.BlockSvg
       blockIdMap.set(item.sourceId, pastedBlock.id)
       pastedIds.push(pastedBlock.id)
+      pastedBlocks.push(pastedBlock)
     })
+
+    const anchorBlock = pastedBlocks[anchorIndex]
+    if (anchorBlock) {
+      const anchorPoint = connectionOverlay?.getPrimaryLeftPortPoint(anchorBlock) ?? {
+        x: anchorBlock.getRelativeToSurfaceXY().x,
+        y: anchorBlock.getRelativeToSurfaceXY().y + anchorBlock.getHeightWidth().height / 2,
+      }
+      const deltaX = pasteOrigin.x - anchorPoint.x
+      const deltaY = pasteOrigin.y - anchorPoint.y
+      pastedBlocks.forEach((block) => block.moveBy(deltaX, deltaY, ['paste-anchor']))
+    }
   } catch {
     ElMessage.error('积木粘贴失败，请重新复制后再试')
     return
@@ -1833,12 +1921,16 @@ const loadReference = async (detail: TemplateReferenceDetail) => {
     connectionOverlay?.setLinks(
       rewriteMathOperandPrefixLinks(readTemplateLinks(document.workspace)),
     )
+    const reboundCount = rebindSceneParamBlocks(workspace, toolboxData.value)
     syncSceneParamBlockLabels(workspace, toolboxData.value)
-    validateSceneParamBlocks(workspace, toolboxData.value)
+    const paramErrors = validateSceneParamBlocks(workspace, toolboxData.value)
     dirty.value = true
-    saveErrors.value = []
+    saveErrors.value = paramErrors
     referenceDialogVisible.value = false
     refreshWorkspaceState()
+    if (reboundCount > 0) {
+      ElMessage.success(`已自动关联 ${reboundCount} 个当前场景参数`)
+    }
   } finally {
     restoringWorkspace = false
   }
@@ -1885,9 +1977,13 @@ const returnToList = () => {
 const handleShortcut = (event: KeyboardEvent) => {
   const key = event.key.toLowerCase()
   const hasModifier = event.ctrlKey || event.metaKey
+  const consumeShortcut = () => {
+    event.preventDefault()
+    event.stopImmediatePropagation()
+  }
 
   if (hasModifier && key === 's') {
-    event.preventDefault()
+    consumeShortcut()
     saveContent()
     return
   }
@@ -1897,25 +1993,25 @@ const handleShortcut = (event: KeyboardEvent) => {
   }
 
   if (hasModifier && key === 'c') {
-    event.preventDefault()
+    consumeShortcut()
     copySelectedBlocks()
     return
   }
 
   if (hasModifier && key === 'v') {
-    event.preventDefault()
+    consumeShortcut()
     pasteCopiedBlocks()
     return
   }
 
   if (hasModifier && key === 'z') {
-    event.preventDefault()
+    consumeShortcut()
     undoWorkspace()
     return
   }
 
   if (hasModifier && key === 'y') {
-    event.preventDefault()
+    consumeShortcut()
     redoWorkspace()
   }
 }
@@ -1934,7 +2030,7 @@ onMounted(() => {
   originalBodyOverflow = document.body.style.overflow
   document.body.style.overflow = 'hidden'
   window.addEventListener('resize', resizeWorkspace)
-  window.addEventListener('keydown', handleShortcut)
+  window.addEventListener('keydown', handleShortcut, true)
   loadEditor()
 })
 
@@ -1942,7 +2038,7 @@ onBeforeUnmount(() => {
   disposed = true
   document.body.style.overflow = originalBodyOverflow
   window.removeEventListener('resize', resizeWorkspace)
-  window.removeEventListener('keydown', handleShortcut)
+  window.removeEventListener('keydown', handleShortcut, true)
   disposeCurrentWorkspace()
 })
 

@@ -259,9 +259,10 @@ const handleCreate = async (form: TemplateCreateForm) => {
 
 const handleUpdate = async (form: TemplateUpdateForm) => {
   const templateId = currentTemplate.value?.id
-  const sceneId = currentTemplate.value?.sceneId
+  const sceneId = form.sceneId
+  const channelType = form.channelType
 
-  if (!templateId || !sceneId || submitLoading.value) {
+  if (!templateId || !sceneId || !channelType || submitLoading.value) {
     return
   }
 
@@ -299,7 +300,27 @@ const handleUpdate = async (form: TemplateUpdateForm) => {
       return
     }
 
-    await updateTemplate(templateId, form)
+    const updateResult = await updateTemplate(templateId, form)
+    const persistedTemplate = (
+      updateResult.sceneId === sceneId && updateResult.channelType === channelType
+    )
+      ? updateResult
+      : await getTemplateDetail(templateId)
+
+    currentTemplate.value = persistedTemplate
+
+    if (persistedTemplate.sceneId !== sceneId) {
+      ElMessage.error('所属场景保存未生效，请确认模板更新接口已支持修改场景')
+      await refreshTemplatePage()
+      return
+    }
+
+    if (persistedTemplate.channelType !== channelType) {
+      ElMessage.error('渠道类型保存未生效，请确认模板更新接口已支持修改渠道类型')
+      await refreshTemplatePage()
+      return
+    }
+
     ElMessage.success('模板基础信息保存成功')
     formDialogVisible.value = false
     await refreshTemplatePage()
@@ -319,7 +340,11 @@ const openCopyDialog = async (row: TemplateListItem) => {
   copyDetailLoading.value = true
 
   try {
-    copySourceTemplate.value = await getTemplateDetail(row.id)
+    const [sourceTemplate] = await Promise.all([
+      getTemplateDetail(row.id),
+      loadSceneOptions(true),
+    ])
+    copySourceTemplate.value = sourceTemplate
   } catch {
     copyDialogVisible.value = false
   } finally {
@@ -340,10 +365,15 @@ const handleCopy = async (form: TemplateCopyForm) => {
   try {
     const result = await copyTemplate(templateId, form)
     const copiedName = result.templateName || form.templateName
-    ElMessage.success(`模板“${copiedName}”复制成功`)
     copyDialogVisible.value = false
     query.pageNum = '1'
     await refreshTemplatePage()
+
+    if (result.channelType === form.channelType && result.sceneId === form.sceneId) {
+      ElMessage.success(`模板“${copiedName}”复制成功`)
+    } else {
+      ElMessage.error(`模板“${copiedName}”已复制，但场景或渠道类型未按目标值保存`)
+    }
   } finally {
     copySubmitLoading.value = false
   }

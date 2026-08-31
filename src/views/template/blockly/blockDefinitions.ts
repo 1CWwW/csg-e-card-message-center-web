@@ -62,6 +62,7 @@ class TemplateTextInput extends Blockly.FieldTextInput {
     super(value, validator)
     this.placeholder = placeholder
     this.maxLength = maxLength
+    this.maxDisplayLength = 14
   }
 
   override initView() {
@@ -126,12 +127,28 @@ class TemplateTextInput extends Blockly.FieldTextInput {
 
     root.classList.toggle('is-empty', !this.getValue())
   }
+
+  protected getLimitedDisplayText(value: string) {
+    let displayText = value
+    if (displayText.length > this.maxDisplayLength) {
+      displayText = `${displayText.slice(0, this.maxDisplayLength - 2)}…`
+    }
+
+    displayText = displayText.replace(/\s/g, '\u00a0')
+    if (this.getSourceBlock()?.RTL) {
+      displayText += '\u200f'
+    }
+
+    return displayText
+  }
 }
 
 class TemplateMultilineTextInput extends TemplateTextInput {
   protected override getDisplayText_() {
     const value = this.getValue() ?? ''
-    return value ? value.replace(/\r\n?|\n/g, '【换行】') : super.getDisplayText_()
+    return value
+      ? this.getLimitedDisplayText(value.replace(/\r\n?|\n/g, '【换行】'))
+      : super.getDisplayText_()
   }
 
   protected override widgetCreate_() {
@@ -352,11 +369,11 @@ export const registerTemplateBlocks = () => {
 
   Blockly.Blocks.amount_format = {
     init() {
-      this.appendValueInput('VALUE').setCheck('Number').appendField('金额')
       this.appendDummyInput()
-        .appendField('格式化(小数位:')
+        .appendField('金额')
+        .appendField('保留')
         .appendField(new TemplateTextInput('2', decimalValidator), 'DECIMALS')
-        .appendField(')')
+        .appendField('位')
       this.setInputsInline(true)
       this.setOutput(true, 'String')
       this.setStyle('format_blocks')
@@ -366,11 +383,10 @@ export const registerTemplateBlocks = () => {
 
   Blockly.Blocks.time_format = {
     init() {
-      this.appendValueInput('VALUE').setCheck(['Time', 'String']).appendField('时间')
       this.appendDummyInput()
-        .appendField('格式化(格式:')
+        .appendField('时间')
+        .appendField('格式')
         .appendField(new TemplateTextInput('yyyy-MM-dd HH:mm:ss'), 'FORMAT')
-        .appendField(')')
       this.setInputsInline(true)
       this.setOutput(true, 'String')
       this.setStyle('format_blocks')
@@ -644,10 +660,11 @@ export const syncSceneParamBlockLabels = (
   })
 }
 
-export const validateSceneParamBlocks = (
+export const rebindSceneParamBlocks = (
   workspace: Blockly.WorkspaceSvg,
   toolboxData: TemplateToolboxData,
 ) => {
+  let reboundCount = 0
   const paramsByName = new Map(toolboxData.params.map((param) => [param.paramName, param]))
 
   workspace.getAllBlocks(false).forEach((block) => {
@@ -657,17 +674,94 @@ export const validateSceneParamBlocks = (
 
     const extraState: unknown = block.saveExtraState?.()
     if (!isRecord(extraState)) {
-      block.setWarningText('参数信息为空', 'scene-param')
       return
     }
 
     const paramName = readString(extraState.paramName)
     const param = paramsByName.get(paramName)
+    const sourceParamType = readString(extraState.paramType).trim().toUpperCase()
+    const targetParamType = param?.paramType.trim().toUpperCase()
+    if (!param || !sourceParamType || sourceParamType !== targetParamType) {
+      return
+    }
+
+    const sceneId = readString(extraState.sceneId)
+    const paramId = readString(extraState.paramId)
+    if (sceneId === toolboxData.sceneId && paramId === param.paramId) {
+      return
+    }
+
+    block.loadExtraState?.({
+      sceneId: toolboxData.sceneId,
+      paramId: param.paramId,
+      paramName: param.paramName,
+      paramType: param.paramType,
+      paramLabel: param.paramLabel,
+    })
+    reboundCount += 1
+  })
+
+  return reboundCount
+}
+
+export const validateSceneParamBlocks = (
+  workspace: Blockly.WorkspaceSvg,
+  toolboxData: TemplateToolboxData,
+) => {
+  const errors: string[] = []
+  const paramsById = new Map(toolboxData.params.map((param) => [param.paramId, param]))
+  const paramsByName = new Map(toolboxData.params.map((param) => [param.paramName, param]))
+
+  workspace.getAllBlocks(false).forEach((block) => {
+    if (block.type !== 'scene_param_value' && block.type !== 'scene_param_ref') {
+      return
+    }
+
+    const extraState: unknown = block.saveExtraState?.()
+    if (!isRecord(extraState)) {
+      const message = '参数信息为空，请删除后从左侧重新添加'
+      block.setWarningText(message, 'scene-param')
+      errors.push(message)
+      return
+    }
+
+    const paramName = readString(extraState.paramName)
+    const paramLabel = readString(extraState.paramLabel) || paramName || '未知参数'
+    const param = paramsByName.get(paramName)
     if (!param) {
-      block.setWarningText(`参数 ${paramName || '未知'} 已不存在`, 'scene-param')
+      const message = `参数“${paramLabel}”在当前场景中不存在`
+      block.setWarningText(message, 'scene-param')
+      errors.push(message)
+      return
+    }
+
+    const sourceParamType = readString(extraState.paramType).trim().toUpperCase()
+    const targetParamType = param.paramType.trim().toUpperCase()
+    if (sourceParamType !== targetParamType) {
+      const message = `参数“${paramLabel}”类型不一致：参考模板为 ${sourceParamType || '未知'}，当前场景为 ${targetParamType || '未知'}`
+      block.setWarningText(message, 'scene-param')
+      errors.push(message)
+      return
+    }
+
+    const sceneId = readString(extraState.sceneId)
+    if (sceneId !== toolboxData.sceneId) {
+      const message = `参数“${paramLabel}”引用场景与当前模板场景不一致`
+      block.setWarningText(message, 'scene-param')
+      errors.push(message)
+      return
+    }
+
+    const paramId = readString(extraState.paramId)
+    if (!paramsById.has(paramId) || paramId !== param.paramId) {
+      const message = `参数“${paramLabel}”引用的参数标识与当前场景不一致`
+      block.setWarningText(message, 'scene-param')
+      errors.push(message)
       return
     }
 
     block.setWarningText(null, 'scene-param')
   })
+
+  return [...new Set(errors)]
 }
