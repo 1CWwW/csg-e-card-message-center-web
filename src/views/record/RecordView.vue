@@ -2,6 +2,7 @@
 import { onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { UploadFilled } from '@element-plus/icons-vue'
+import type { TableColumnCtx, TableInstance } from 'element-plus'
 import {
   exportRecords,
   getRecordDetail,
@@ -47,6 +48,7 @@ const resendHistoryLoaded = ref(false)
 const resendHistoryLogs = ref<MessageRecordResendLogVO[]>([])
 const exportLoading = ref(false)
 const recordFilterRef = ref<RecordFilterExpose | null>(null)
+const recordTableRef = ref<TableInstance>()
 let listRequestSequence = 0
 
 const query = reactive<MessageRecordQuery>({
@@ -63,6 +65,51 @@ const statusTextMap: Record<string, string> = {
 
 const getErrorMessage = (error: unknown, fallback: string) => {
   return error instanceof Error && error.message ? error.message : fallback
+}
+
+const getColumnWidth = (column: TableColumnCtx) => {
+  return column.realWidth ?? Number(column.width || column.minWidth || 0)
+}
+
+const handleHeaderDragend = (
+  _newWidth: number,
+  _oldWidth: number,
+  draggedColumn: TableColumnCtx,
+) => {
+  const table = recordTableRef.value
+  const tableWidth = table?.$el instanceof HTMLElement ? table.$el.clientWidth : 0
+  const columns = table?.columns ?? []
+  const totalWidth = columns.reduce((sum, column) => sum + getColumnWidth(column), 0)
+  const missingWidth = Math.floor(tableWidth - totalWidth)
+
+  if (missingWidth <= 1) {
+    return
+  }
+
+  const stretchableColumns = columns.filter(
+    (column) => column.id !== draggedColumn.id && column.resizable && !column.fixed,
+  )
+  const stretchableWidth = stretchableColumns.reduce(
+    (sum, column) => sum + getColumnWidth(column),
+    0,
+  )
+  if (!stretchableColumns.length || stretchableWidth <= 0) {
+    return
+  }
+
+  let remainingWidth = missingWidth
+  stretchableColumns.forEach((column, index) => {
+    const currentWidth = getColumnWidth(column)
+    const addedWidth = index === stretchableColumns.length - 1
+      ? remainingWidth
+      : Math.round(missingWidth * (currentWidth / stretchableWidth))
+    const nextWidth = currentWidth + addedWidth
+    column.width = nextWidth
+    column.realWidth = nextWidth
+    remainingWidth -= addedWidth
+  })
+
+  requestAnimationFrame(() => recordTableRef.value?.doLayout())
 }
 
 const fetchOverview = async () => {
@@ -299,13 +346,13 @@ const confirmResend = async (row: MessageRecordListItem | MessageRecordDetail) =
 
     if (result.success) {
       ElMessage.success(result.sendStatusDesc || '消息已重新发送')
-      await Promise.all([fetchRecordList(), fetchOverview()])
     } else {
       ElMessage.error(result.errorMsg || result.sendStatusDesc || '消息重发失败')
-      await fetchRecordList()
     }
+
+    await Promise.all([fetchRecordList(), fetchOverview()])
   } catch {
-    await fetchRecordList()
+    await Promise.all([fetchRecordList(), fetchOverview()])
   } finally {
     if (detailVisible.value && currentDetail.value?.id === row.id) {
       await loadDetail(row.id)
@@ -468,13 +515,16 @@ onMounted(() => {
       />
 
       <el-table
+        ref="recordTableRef"
         v-loading="listLoading"
         class="record-table"
         :data="recordList"
+        border
         row-key="id"
         table-layout="fixed"
         scrollbar-always-on
         empty-text="暂无消息记录"
+        @header-dragend="handleHeaderDragend"
       >
         <el-table-column label="消息 ID" width="165" show-overflow-tooltip>
           <template #default="{ row }">
@@ -493,14 +543,16 @@ onMounted(() => {
             </span>
           </template>
         </el-table-column>
-        <el-table-column label="渠道类型" width="120">
+        <el-table-column label="渠道类型" width="120" show-overflow-tooltip>
           <template #default="{ row }">
             <span
               v-if="row.channelType"
               class="record-table__channel-type record-table__primary-text"
             >
               <ChannelTypeIcon :channel-type="row.channelType" />
-              {{ getChannelTypeLabel(row.channelType, row.channelTypeDesc || undefined) }}
+              <span class="record-table__channel-label">
+                {{ getChannelTypeLabel(row.channelType, row.channelTypeDesc || undefined) }}
+              </span>
             </span>
             <span v-else>-</span>
           </template>
@@ -562,7 +614,13 @@ onMounted(() => {
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="82" align="center" fixed="right">
+        <el-table-column
+          label="操作"
+          width="82"
+          align="center"
+          fixed="right"
+          :resizable="false"
+        >
           <template #default="{ row }">
             <div
               class="record-table__actions"
@@ -633,6 +691,10 @@ onMounted(() => {
 </template>
 
 <style scoped lang="scss">
+:global(body[style*='col-resize']) {
+  cursor: col-resize !important;
+}
+
 .record-page {
   min-height: 100%;
 }
@@ -672,8 +734,13 @@ onMounted(() => {
     font-size: 12px;
   }
 
-  :deep(.cell) {
+  :deep(.el-table__cell .cell) {
+    min-width: 0;
+    overflow: hidden;
     padding: 0 7px;
+    text-overflow: ellipsis;
+    white-space: nowrap !important;
+    word-break: keep-all;
   }
 
   :deep(.el-table__body tr:hover > td.el-table__cell) {
@@ -692,14 +759,33 @@ onMounted(() => {
 }
 
 .record-table__channel-type {
-  display: inline-flex;
+  display: flex;
   align-items: center;
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
   gap: 7px;
   white-space: nowrap;
 }
 
+.record-table__channel-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .record-table__primary-text {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
   color: var(--app-text-primary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.record-table__channel-type.record-table__primary-text {
+  display: flex;
 }
 
 .record-table__priority-tag,

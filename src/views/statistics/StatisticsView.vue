@@ -69,11 +69,27 @@ const tableHeaderStyle = {
   fontWeight: 600,
 }
 
+const DEFAULT_DATE_RANGE_DAYS = 30
 const activeTab = ref<StatisticsTab>('TIME')
 const viewMode = ref<ViewMode>('chart')
-const quickRange = ref<'today' | '7days' | '30days' | 'custom'>('custom')
-const dateRange = ref<DateRange | null>(null)
+const quickRange = ref<'today' | '7days' | '30days' | 'custom'>('30days')
+const dateRange = ref<DateRange | null>(getRecentDateRange())
+const startDate = computed<string>({
+  get: () => dateRange.value?.[0] ?? getRecentDateRange()[0],
+  set: (value) => {
+    const currentRange = dateRange.value ?? getRecentDateRange()
+    dateRange.value = [value, currentRange[1]]
+  },
+})
+const endDate = computed<string>({
+  get: () => dateRange.value?.[1] ?? getRecentDateRange()[1],
+  set: (value) => {
+    const currentRange = dateRange.value ?? getRecentDateRange()
+    dateRange.value = [currentRange[0], value]
+  },
+})
 const statisticsOverview = ref<StatisticsOverviewData | null>(null)
+const recentSevenDayTotal = ref(0)
 const recordOverview = ref<MessageRecordOverview | null>(null)
 const statisticsOverviewLoading = ref(false)
 const recordOverviewLoading = ref(false)
@@ -152,11 +168,35 @@ function toEndTime(date: string) {
   return `${date} 23:59:59`
 }
 
-function getDateRangeDays(range: DateRange) {
-  const start = new Date(toStartTime(range[0]).replace(' ', 'T')).getTime()
-  const end = new Date(toEndTime(range[1]).replace(' ', 'T')).getTime()
+function formatDate(date: Date) {
+  const pad = (value: number) => String(value).padStart(2, '0')
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
+}
 
-  return Math.ceil((end - start) / 86400000) + 1
+function getRecentDateRange(days = DEFAULT_DATE_RANGE_DAYS): DateRange {
+  const endDate = new Date()
+  const startDate = new Date(endDate)
+  startDate.setDate(startDate.getDate() - (days - 1))
+
+  return [formatDate(startDate), formatDate(endDate)]
+}
+
+function buildRecentSevenDayQuery(): StatisticsQuery {
+  const endDate = new Date()
+  const startDate = new Date(endDate)
+  startDate.setDate(startDate.getDate() - 6)
+
+  return {
+    startTime: toStartTime(formatDate(startDate)),
+    endTime: toEndTime(formatDate(endDate)),
+  }
+}
+
+function getDateRangeDays(range: DateRange) {
+  const start = new Date(`${range[0]}T00:00:00`).getTime()
+  const end = new Date(`${range[1]}T00:00:00`).getTime()
+
+  return Math.floor((end - start) / 86400000) + 1
 }
 
 function getAllowedGranularities(days: number): StatisticsGranularity[] {
@@ -293,7 +333,12 @@ async function loadStatisticsOverview() {
   overviewError.value = ''
 
   try {
-    statisticsOverview.value = await getStatisticsOverview(buildBaseQuery())
+    const [overview, recentSevenDayOverview] = await Promise.all([
+      getStatisticsOverview(buildBaseQuery()),
+      getStatisticsOverview(buildRecentSevenDayQuery()),
+    ])
+    statisticsOverview.value = overview
+    recentSevenDayTotal.value = recentSevenDayOverview.totalCount ?? 0
   } catch (error) {
     overviewError.value = error instanceof Error ? error.message : '概览数据加载失败'
   } finally {
@@ -368,8 +413,8 @@ async function handleSearch() {
 }
 
 async function handleReset() {
-  quickRange.value = 'custom'
-  dateRange.value = null
+  quickRange.value = '30days'
+  dateRange.value = getRecentDateRange()
   filters.channelTypes = []
   filters.sceneIds = []
   filters.unitIds = []
@@ -607,6 +652,27 @@ function formatChartValueLabel(params: unknown) {
   return formatNumber(value)
 }
 
+function shouldShowTimeAxisLabel(index: number, itemCount: number) {
+  const maxLabelCount = filters.granularity === 'DAY'
+    ? itemCount
+    : filters.granularity === 'WEEK'
+      ? 16
+      : 12
+
+  if (itemCount <= maxLabelCount || maxLabelCount <= 1) {
+    return true
+  }
+
+  const lastIndex = itemCount - 1
+  for (let position = 0; position < maxLabelCount; position += 1) {
+    if (Math.round((position * lastIndex) / (maxLabelCount - 1)) === index) {
+      return true
+    }
+  }
+
+  return false
+}
+
 const timeChartOption = computed<StatisticsChartOption>(() => {
   const rows = tabStates.TIME.data
 
@@ -644,8 +710,10 @@ const timeChartOption = computed<StatisticsChartOption>(() => {
       axisLabel: {
         color: '#8fa0bb',
         fontSize: 13,
-        interval: 0,
+        interval: (index: number) => shouldShowTimeAxisLabel(index, rows.length),
         rotate: 0,
+        showMinLabel: true,
+        showMaxLabel: true,
         formatter: formatTimeAxisLabel,
       },
     },
@@ -1039,6 +1107,7 @@ onMounted(async () => {
     </el-alert>
     <StatisticsOverview
       :statistics-data="statisticsOverview"
+      :recent-seven-day-total="recentSevenDayTotal"
       :record-data="recordOverview"
       :loading="overviewLoading"
     />
@@ -1061,18 +1130,31 @@ onMounted(async () => {
       <el-form class="statistics-page__filters" label-width="84px" @submit.prevent>
         <div class="statistics-page__filter-grid" :class="filterGridClass">
           <el-form-item label="时间范围">
-            <el-date-picker
-              v-model="dateRange"
-              type="daterange"
-              value-format="YYYY-MM-DD"
-              start-placeholder="开始日期"
-              end-placeholder="结束日期"
-              clearable
-              @change="
-                quickRange = 'custom';
-                syncGranularityWithRange()
-              "
-            />
+            <div class="statistics-page__date-range">
+              <el-date-picker
+                v-model="startDate"
+                type="date"
+                value-format="YYYY-MM-DD"
+                placeholder="开始日期"
+                :clearable="false"
+                @change="
+                  quickRange = 'custom';
+                  syncGranularityWithRange()
+                "
+              />
+              <span class="statistics-page__date-range-separator">至</span>
+              <el-date-picker
+                v-model="endDate"
+                type="date"
+                value-format="YYYY-MM-DD"
+                placeholder="结束日期"
+                :clearable="false"
+                @change="
+                  quickRange = 'custom';
+                  syncGranularityWithRange()
+                "
+              />
+            </div>
           </el-form-item>
           <el-form-item v-if="activeTab === 'TIME'" label="时间粒度">
             <el-select v-model="filters.granularity">
@@ -1407,6 +1489,19 @@ onMounted(async () => {
     margin-bottom: 14px;
   }
 
+  &__date-range {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    align-items: center;
+    width: 100%;
+    gap: 8px;
+  }
+
+  &__date-range-separator {
+    color: var(--app-text-secondary);
+    white-space: nowrap;
+  }
+
   &__filter-grid {
     display: grid;
     grid-template-columns: minmax(340px, 1.4fr) minmax(220px, 0.8fr) auto;
@@ -1414,7 +1509,7 @@ onMounted(async () => {
     align-items: center;
 
     &.is-time {
-      grid-template-columns: minmax(280px, 1.4fr) minmax(128px, 0.58fr) minmax(180px, 1fr) minmax(190px, 1.05fr) max-content;
+      grid-template-columns: minmax(340px, 1.4fr) minmax(128px, 0.58fr) minmax(180px, 1fr) minmax(190px, 1.05fr) max-content;
       gap: 10px;
 
       :deep(.el-form-item__label) {

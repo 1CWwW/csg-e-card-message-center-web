@@ -41,7 +41,7 @@ const buildRecordParams = (query: MessageRecordQuery, includePage: boolean) => {
     'userId',
     'userOrgId',
     'priority',
-    'pushMode',
+    'callType',
     'startTime',
     'endTime',
   ] as const

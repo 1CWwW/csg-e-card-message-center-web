@@ -28,7 +28,7 @@ export interface MessageRecordQuery {
   userId?: string
   userOrgId?: string
   priority?: MessagePriority
-  pushMode?: PushMode
+  callType?: MessageCallType
   startTime?: string
   endTime?: string
 }

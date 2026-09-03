@@ -1,7 +1,9 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, getCurrentInstance, onBeforeUnmount, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import {
+  getAllUnitNodes,
+  getUnitDescendantNodes,
   getUnitTreeChildren,
   getUnitTreeUnavailableMessage,
   resolveUnitNodes,
@@ -28,7 +30,7 @@ const props = withDefaults(
     loading: false,
     disabled: false,
     placeholder: '请选择单位',
-    collapseTags: false,
+    collapseTags: true,
     collapseTagsTooltip: false,
     lazyLoad: true,
   },
@@ -59,6 +61,10 @@ interface TreeSelectExpose {
   }
 }
 
+interface TreeCheckInfo {
+  checkedKeys: Array<string | number>
+}
+
 type LoadResolve = (data: UnitTreeNode[]) => void
 type LoadReject = () => void
 
@@ -68,8 +74,14 @@ const resolvedNodes = ref<UnitTreeNode[]>([])
 const searchResults = ref<UnitTreeNode[]>([])
 const rootLoading = ref(false)
 const searching = ref(false)
+const selectionLoading = ref(false)
+const componentUid = getCurrentInstance()?.uid ?? Date.now()
+const popperClass = `unit-tree-select-popper-${componentUid}`
 let pendingRootResolve: LoadResolve | null = null
 let searchTimer: ReturnType<typeof setTimeout> | null = null
+let ctrlClickResetTimer: ReturnType<typeof setTimeout> | null = null
+let ctrlClickPending = false
+let selectionRequestId = 0
 let latestKeyword = ''
 
 const cacheData = computed(() => {
@@ -108,6 +120,11 @@ const loadRootNodes = async () => {
   rootLoading.value = true
   try {
     rootNodes.value = await getUnitTreeChildren()
+    await Promise.allSettled(
+      rootNodes.value
+        .filter((node) => node.hasChildren !== false)
+        .map((node) => getUnitTreeChildren(node.unitId)),
+    )
     pendingRootResolve(rootNodes.value)
     pendingRootResolve = null
   } catch {
@@ -119,9 +136,42 @@ const loadRootNodes = async () => {
 
 const handleVisibleChange = (visible: boolean) => {
   emit('visible-change', visible)
+  if (visible) {
+    document.addEventListener('click', handleDocumentClickCapture, true)
+  } else {
+    document.removeEventListener('click', handleDocumentClickCapture, true)
+    resetCtrlClickState()
+  }
+
   if (visible && props.lazyLoad) {
     loadRootNodes()
   }
+}
+
+const resetCtrlClickState = () => {
+  ctrlClickPending = false
+  if (ctrlClickResetTimer) {
+    clearTimeout(ctrlClickResetTimer)
+    ctrlClickResetTimer = null
+  }
+}
+
+const handleDocumentClickCapture = (event: MouseEvent) => {
+  const target = event.target
+  if (!(target instanceof Element)) {
+    return
+  }
+
+  const treeNode = target.closest(`.${popperClass} .el-tree-node__content`)
+  if (!treeNode) {
+    return
+  }
+
+  ctrlClickPending = event.ctrlKey || event.metaKey
+  if (ctrlClickResetTimer) {
+    clearTimeout(ctrlClickResetTimer)
+  }
+  ctrlClickResetTimer = setTimeout(resetCtrlClickState, 0)
 }
 
 const updateTreeData = (data: UnitTreeNode[]) => {
@@ -187,6 +237,70 @@ const selectedValue = computed({
   },
 })
 
+const flattenUnitNodes = (nodes: UnitTreeNode[]): UnitTreeNode[] => {
+  return nodes.flatMap((node) => [node, ...flattenUnitNodes(node.children ?? [])])
+}
+
+const handleTreeCheck = async (data: UnitTreeNode, checkedInfo: TreeCheckInfo) => {
+  const currentOnly = ctrlClickPending
+  resetCtrlClickState()
+  if (!props.multiple || currentOnly || data.hasChildren === false) {
+    return
+  }
+
+  const unitId = data.orgId || data.unitId
+  const checkedKeys = checkedInfo.checkedKeys.map(String)
+  const shouldCheck = checkedKeys.includes(unitId)
+  const requestId = ++selectionRequestId
+  selectionLoading.value = true
+
+  try {
+    const descendantNodes = props.lazyLoad
+      ? await getUnitDescendantNodes(unitId)
+      : flattenUnitNodes(data.children ?? [])
+    if (requestId !== selectionRequestId) {
+      return
+    }
+
+    const descendantIds = new Set(descendantNodes.map((node) => node.unitId))
+    selectedValue.value = shouldCheck
+      ? Array.from(new Set([...checkedKeys, ...descendantIds]))
+      : checkedKeys.filter((key) => !descendantIds.has(key))
+  } catch {
+    ElMessage.error('单位下级组织加载失败，请稍后重试')
+  } finally {
+    if (requestId === selectionRequestId) {
+      selectionLoading.value = false
+    }
+  }
+}
+
+const selectAllUnits = async () => {
+  const requestId = ++selectionRequestId
+  selectionLoading.value = true
+  try {
+    const allNodes = props.lazyLoad ? await getAllUnitNodes() : flattenUnitNodes(props.data)
+    if (requestId !== selectionRequestId) {
+      return
+    }
+
+    resolvedNodes.value = allNodes
+    selectedValue.value = allNodes.map((node) => node.unitId)
+  } catch {
+    ElMessage.error(getUnitTreeUnavailableMessage())
+  } finally {
+    if (requestId === selectionRequestId) {
+      selectionLoading.value = false
+    }
+  }
+}
+
+const clearAllUnits = () => {
+  selectionRequestId += 1
+  selectionLoading.value = false
+  selectedValue.value = []
+}
+
 watch(
   () => props.modelValue,
   async (value) => {
@@ -206,6 +320,8 @@ watch(
 )
 
 onBeforeUnmount(() => {
+  document.removeEventListener('click', handleDocumentClickCapture, true)
+  resetCtrlClickState()
   if (searchTimer) {
     clearTimeout(searchTimer)
   }
@@ -217,6 +333,7 @@ onBeforeUnmount(() => {
     ref="treeSelectRef"
     v-model="selectedValue"
     class="unit-tree-select"
+    :popper-class="popperClass"
     :data="data"
     :cache-data="cacheData"
     :props="treeProps"
@@ -229,19 +346,47 @@ onBeforeUnmount(() => {
     :remote-method="lazyLoad ? handleRemoteSearch : undefined"
     clearable
     :multiple="multiple"
+    :show-checkbox="multiple"
     :collapse-tags="collapseTags"
     :collapse-tags-tooltip="collapseTagsTooltip"
-    :loading="loading || rootLoading || searching"
-    :disabled="disabled"
+    :loading="loading || rootLoading || searching || selectionLoading"
+    :disabled="disabled || selectionLoading"
     :placeholder="placeholder"
     :empty-text="loading ? '单位树加载中' : '暂无单位数据'"
     :render-after-expand="true"
+    @check="handleTreeCheck"
     @visible-change="handleVisibleChange"
-  />
+  >
+    <template v-if="multiple" #header>
+      <div class="unit-tree-select__actions">
+        <span class="unit-tree-select__hint">Ctrl+点击仅选择当前单位</span>
+        <el-button link type="primary" :disabled="selectionLoading" @click.stop="selectAllUnits">
+          全选
+        </el-button>
+        <el-button link type="primary" :disabled="selectionLoading" @click.stop="clearAllUnits">
+          取消全选
+        </el-button>
+      </div>
+    </template>
+  </el-tree-select>
 </template>
 
 <style scoped lang="scss">
 .unit-tree-select {
   width: 100%;
+}
+
+.unit-tree-select__actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 2px 4px;
+  white-space: nowrap;
+}
+
+.unit-tree-select__hint {
+  margin-right: auto;
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
 }
 </style>

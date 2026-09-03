@@ -166,16 +166,14 @@ watch(
               <span>消息ID：</span>
               <strong class="is-mono">{{ detail.msgId }}</strong>
             </div>
-            <div class="record-detail-dialog__item">
+            <div class="record-detail-dialog__item is-wrappable">
               <span>业务ID：</span>
-              <el-tooltip
-                :content="detail.bizId || '-'"
-                placement="top"
-                popper-class="record-detail-id-tooltip"
-                :show-after="300"
+              <strong
+                class="is-mono is-id-value"
+                :title="detail.bizId || '-'"
               >
-                <strong class="is-mono">{{ detail.bizId || '-' }}</strong>
-              </el-tooltip>
+                {{ detail.bizId || '-' }}
+              </strong>
             </div>
             <div class="record-detail-dialog__item">
               <span>场景：</span>
@@ -209,16 +207,14 @@ watch(
         <section class="record-detail-dialog__section">
           <h3>接收信息</h3>
           <div class="record-detail-dialog__grid">
-            <div class="record-detail-dialog__item">
+            <div class="record-detail-dialog__item is-wrappable">
               <span>用户ID：</span>
-              <el-tooltip
-                :content="detail.userId || '-'"
-                placement="top"
-                popper-class="record-detail-id-tooltip"
-                :show-after="300"
+              <strong
+                class="is-mono is-id-value"
+                :title="detail.userId || '-'"
               >
-                <strong class="is-mono">{{ detail.userId || '-' }}</strong>
-              </el-tooltip>
+                {{ detail.userId || '-' }}
+              </strong>
             </div>
             <div class="record-detail-dialog__item">
               <span>姓名：</span>
@@ -358,12 +354,14 @@ watch(
 
 <style scoped lang="scss">
 :global(.record-detail-dialog) {
+  --el-dialog-padding-primary: 0;
   display: flex;
   width: 620px !important;
   max-width: calc(100vw - 48px);
   max-height: 84vh;
   flex-direction: column;
   overflow: hidden;
+  padding: 0;
   border-radius: 16px;
   box-shadow: 0 20px 50px rgb(15 23 42 / 20%);
 }
@@ -428,6 +426,7 @@ watch(
 .record-detail-dialog__grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
   gap: 8px 28px;
 }
 
@@ -443,6 +442,10 @@ watch(
   > span {
     flex: 0 0 auto;
     white-space: nowrap;
+  }
+
+  &.is-wrappable {
+    align-items: flex-start;
   }
 
   &.is-full {
@@ -464,12 +467,16 @@ watch(
     font-size: 12px;
     font-weight: 500;
   }
-}
 
-:global(.record-detail-id-tooltip) {
-  max-width: min(420px, calc(100vw - 32px));
-  overflow-wrap: anywhere;
-  word-break: break-all;
+  .is-id-value {
+    overflow: visible;
+    overflow-wrap: anywhere;
+    cursor: text;
+    text-overflow: clip;
+    user-select: text;
+    white-space: normal;
+    word-break: break-all;
+  }
 }
 
 .record-detail-dialog__status {
@@ -508,7 +515,7 @@ watch(
 .record-detail-dialog__resend-summary {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 0;
   margin-top: 12px;
   color: #7183a0;
   font-size: 13px;
@@ -520,6 +527,7 @@ watch(
   }
 
   button {
+    margin-left: 10px;
     padding: 0;
     border: 0;
     background: transparent;

@@ -3,6 +3,8 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus } from '@element-plus/icons-vue'
+import { getRecordList } from '../../api/record'
+import { getTimeStatistics } from '../../api/statistics'
 import {
   copyTemplate,
   createTemplate,
@@ -21,11 +23,13 @@ import type {
   TemplateDetail,
   TemplateListItem,
   TemplateQuery,
+  TemplateRecentRecordSummary,
   TemplateSceneOption,
   TemplateUpdateForm,
 } from '../../types/template'
 import type { UnitTreeNode } from '../../types/unit'
 import TemplateCopyDialog from './components/TemplateCopyDialog.vue'
+import TemplateDeleteDialog from './components/TemplateDeleteDialog.vue'
 import TemplateFormDialog from './components/TemplateFormDialog.vue'
 import TemplateSearchForm from './components/TemplateSearchForm.vue'
 import TemplateTable from './components/TemplateTable.vue'
@@ -47,6 +51,16 @@ const listLoading = ref(false)
 const loadFailed = ref(false)
 const operationLoadingKey = ref('')
 const overviewLoading = ref(false)
+
+const deleteDialogVisible = ref(false)
+const deleteTargetTemplate = ref<TemplateListItem | null>(null)
+const deleteCheckLoading = ref(false)
+const deleteCheckFailed = ref(false)
+const deleteSubmitLoading = ref(false)
+const deleteDisableLoading = ref(false)
+const deleteRecentRecordTotal = ref(0)
+const deleteRecentRecordSummaries = ref<TemplateRecentRecordSummary[]>([])
+let deleteCheckSequence = 0
 
 const formDialogVisible = ref(false)
 const formDialogMode = ref<DialogMode>('create')
@@ -73,6 +87,8 @@ const query = reactive<TemplateQuery>({
   pageNum: '1',
   pageSize: '20',
 })
+
+const pageSizes = [10, 20, 50, 100]
 
 const searchQuery = computed<TemplateSearchPayload>(() => ({
   templateName: query.templateName,
@@ -106,13 +122,25 @@ const normalizeTemplateName = (value?: string) =>
     .replace(/\s+/g, '')
     .toLocaleLowerCase()
 
+const getTemplateUpdatedTimestamp = (template: TemplateListItem) => {
+  const dateTime = template.updatedAt || template.createdAt
+  if (!dateTime) {
+    return 0
+  }
+
+  const timestamp = new Date(dateTime.replace(' ', 'T')).getTime()
+  return Number.isNaN(timestamp) ? 0 : timestamp
+}
+
 const fetchTemplateList = async () => {
   listLoading.value = true
   loadFailed.value = false
 
   try {
     const data = await getTemplateList(query)
-    templateList.value = data?.list ?? []
+    templateList.value = [...(data?.list ?? [])].sort(
+      (first, second) => getTemplateUpdatedTimestamp(second) - getTemplateUpdatedTimestamp(first),
+    )
     total.value = data?.total ?? 0
   } catch {
     templateList.value = []
@@ -128,8 +156,29 @@ const readRouteSceneId = () => {
   return Array.isArray(value) ? value[0] || '' : value || ''
 }
 
+const readRouteQueryValue = (value: unknown) => {
+  if (Array.isArray(value)) {
+    return typeof value[0] === 'string' ? value[0] : ''
+  }
+
+  return typeof value === 'string' ? value : ''
+}
+
+const readRoutePageNum = () => {
+  const pageNum = Number(readRouteQueryValue(route.query.pageNum))
+  return Number.isInteger(pageNum) && pageNum > 0 ? String(pageNum) : '1'
+}
+
+const readRoutePageSize = () => {
+  const pageSize = Number(readRouteQueryValue(route.query.pageSize))
+  return pageSizes.includes(pageSize) ? String(pageSize) : '20'
+}
+
 const syncRouteSceneId = (sceneId?: string) => {
   const nextQuery = { ...route.query }
+
+  nextQuery.pageNum = query.pageNum
+  nextQuery.pageSize = query.pageSize
 
   if (sceneId) {
     nextQuery.sceneId = sceneId
@@ -204,11 +253,13 @@ const handleReset = () => {
 const handleSizeChange = (pageSize: number) => {
   query.pageNum = '1'
   query.pageSize = String(pageSize)
+  syncRouteSceneId(query.sceneId)
   fetchTemplateList()
 }
 
 const handlePageChange = (pageNum: number) => {
   query.pageNum = String(pageNum)
+  syncRouteSceneId(query.sceneId)
   fetchTemplateList()
 }
 
@@ -388,6 +439,11 @@ const openEditor = (row: TemplateListItem) => {
   router.push({
     name: 'TemplateEditor',
     params: { templateId: row.id },
+    query: {
+      ...route.query,
+      pageNum: query.pageNum,
+      pageSize: query.pageSize,
+    },
   })
 }
 
@@ -435,31 +491,111 @@ const handleToggle = async (row: TemplateListItem) => {
   }
 }
 
-const handleDelete = async (row: TemplateListItem) => {
+const formatQueryDateTime = (date: Date) => {
+  const pad = (value: number) => String(value).padStart(2, '0')
+  return [
+    `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`,
+    `${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`,
+  ].join(' ')
+}
+
+const getRecent30DayRange = () => {
+  const endTime = new Date()
+  const startTime = new Date(endTime)
+  startTime.setDate(startTime.getDate() - 29)
+  startTime.setHours(0, 0, 0, 0)
+
+  return {
+    startTime: formatQueryDateTime(startTime),
+    endTime: formatQueryDateTime(endTime),
+  }
+}
+
+const loadDeleteRecordCheck = async () => {
+  const templateId = deleteTargetTemplate.value?.id
+
+  if (!templateId || deleteCheckLoading.value) {
+    return
+  }
+
+  const requestSequence = ++deleteCheckSequence
+  const timeRange = getRecent30DayRange()
+  deleteCheckLoading.value = true
+  deleteCheckFailed.value = false
+  deleteRecentRecordTotal.value = 0
+  deleteRecentRecordSummaries.value = []
+  operationLoadingKey.value = `delete-check:${templateId}`
+
+  try {
+    const recordPage = await getRecordList({
+      pageNum: 1,
+      pageSize: 1,
+      templateId,
+      ...timeRange,
+    })
+
+    if (requestSequence !== deleteCheckSequence) {
+      return
+    }
+
+    deleteRecentRecordTotal.value = recordPage.total ?? 0
+
+    if (deleteRecentRecordTotal.value > 0) {
+      const statistics = await getTimeStatistics({
+        templateIds: [templateId],
+        granularity: 'DAY',
+        ...timeRange,
+      })
+
+      if (requestSequence !== deleteCheckSequence) {
+        return
+      }
+
+      deleteRecentRecordSummaries.value = statistics
+        .filter((item) => item.totalCount > 0)
+        .sort((left, right) => right.period.localeCompare(left.period))
+        .slice(0, 3)
+        .map((item) => ({
+          date: item.period || item.periodLabel,
+          count: item.totalCount,
+        }))
+    }
+  } catch {
+    if (requestSequence === deleteCheckSequence) {
+      deleteCheckFailed.value = true
+    }
+  } finally {
+    if (requestSequence === deleteCheckSequence) {
+      deleteCheckLoading.value = false
+      operationLoadingKey.value = ''
+    }
+  }
+}
+
+const handleDelete = (row: TemplateListItem) => {
   if (!row.id || operationLoadingKey.value) {
     return
   }
 
-  try {
-    await ElMessageBox.confirm(
-      `确认删除模板“${row.templateName || '-'}”吗？删除后无法恢复。`,
-      '删除确认',
-      {
-        type: 'warning',
-        confirmButtonText: '确认删除',
-        cancelButtonText: '取消',
-        confirmButtonClass: 'el-button--danger',
-      },
-    )
-  } catch {
+  deleteTargetTemplate.value = row
+  deleteDialogVisible.value = true
+  loadDeleteRecordCheck()
+}
+
+const confirmDeleteTemplate = async () => {
+  const templateId = deleteTargetTemplate.value?.id
+
+  if (!templateId || deleteSubmitLoading.value || deleteDisableLoading.value) {
     return
   }
 
-  operationLoadingKey.value = `delete:${row.id}`
+  deleteSubmitLoading.value = true
+  operationLoadingKey.value = `delete:${templateId}`
 
   try {
-    await deleteTemplate(row.id)
+    await deleteTemplate(templateId)
     ElMessage.success('删除模板成功')
+    deleteDialogVisible.value = false
 
     if (templateList.value.length === 1 && currentPage.value > 1) {
       query.pageNum = String(currentPage.value - 1)
@@ -467,6 +603,33 @@ const handleDelete = async (row: TemplateListItem) => {
 
     await refreshTemplatePage()
   } finally {
+    deleteSubmitLoading.value = false
+    operationLoadingKey.value = ''
+  }
+}
+
+const disableDeleteTargetTemplate = async () => {
+  const templateId = deleteTargetTemplate.value?.id
+
+  if (
+    !templateId ||
+    deleteTargetTemplate.value?.status !== 1 ||
+    deleteSubmitLoading.value ||
+    deleteDisableLoading.value
+  ) {
+    return
+  }
+
+  deleteDisableLoading.value = true
+  operationLoadingKey.value = `disable:${templateId}`
+
+  try {
+    await toggleTemplateStatus(templateId)
+    ElMessage.success('模板已停用')
+    deleteDialogVisible.value = false
+    await refreshTemplatePage()
+  } finally {
+    deleteDisableLoading.value = false
     operationLoadingKey.value = ''
   }
 }
@@ -498,6 +661,10 @@ watch(
     const routeSceneId = readRouteSceneId()
     const nextSceneId = routeSceneId || undefined
 
+    if (routeSceneId) {
+      void loadSceneOptions(true)
+    }
+
     if (query.sceneId === nextSceneId) {
       return
     }
@@ -511,9 +678,12 @@ watch(
 onMounted(() => {
   const routeSceneId = readRouteSceneId()
 
+  query.pageNum = readRoutePageNum()
+  query.pageSize = readRoutePageSize()
+
   if (routeSceneId) {
-    query.pageNum = '1'
     query.sceneId = routeSceneId
+    void loadSceneOptions(true)
   }
 
   refreshTemplatePage()
@@ -599,7 +769,7 @@ onMounted(() => {
           :pager-count="5"
           :current-page="currentPage"
           :page-size="currentPageSize"
-          :page-sizes="[10, 20, 50, 100]"
+          :page-sizes="pageSizes"
           :total="total"
           @size-change="handleSizeChange"
           @current-change="handlePageChange"
@@ -620,6 +790,20 @@ onMounted(() => {
       @scene-visible-change="loadSceneOptions"
       @submit-create="handleCreate"
       @submit-update="handleUpdate"
+    />
+
+    <TemplateDeleteDialog
+      v-model="deleteDialogVisible"
+      :template="deleteTargetTemplate"
+      :checking="deleteCheckLoading"
+      :check-failed="deleteCheckFailed"
+      :submitting="deleteSubmitLoading"
+      :disabling="deleteDisableLoading"
+      :recent-record-total="deleteRecentRecordTotal"
+      :recent-record-summaries="deleteRecentRecordSummaries"
+      @retry="loadDeleteRecordCheck"
+      @disable="disableDeleteTargetTemplate"
+      @confirm="confirmDeleteTemplate"
     />
 
     <TemplateCopyDialog

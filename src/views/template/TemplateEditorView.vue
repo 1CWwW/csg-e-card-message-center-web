@@ -1967,7 +1967,7 @@ const returnToList = () => {
   confirmDiscardChanges().then((confirmed) => {
     if (confirmed) {
       skipNextLeaveConfirm = true
-      router.push('/template').catch(() => {
+      router.push({ name: 'Template', query: route.query }).catch(() => {
         skipNextLeaveConfirm = false
       })
     }

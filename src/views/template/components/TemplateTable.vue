@@ -33,6 +33,9 @@ const displayText = (value?: string) => value || '-'
 const getUnitText = (row: TemplateListItem) =>
   (row.unitCount ?? 0) === 0 ? '全部单位（默认）' : `${row.unitCount} 个单位`
 const isBusy = () => Boolean(props.operationLoadingKey)
+const isDeleteLoading = (row: TemplateListItem) =>
+  props.operationLoadingKey === `delete-check:${row.id || ''}` ||
+  props.operationLoadingKey === `delete:${row.id || ''}`
 </script>
 
 <template>
@@ -145,8 +148,8 @@ const isBusy = () => Boolean(props.operationLoadingKey)
           <el-button
             link
             type="danger"
-            :loading="operationLoadingKey === `delete:${row.id || ''}`"
-            :disabled="isBusy() && operationLoadingKey !== `delete:${row.id || ''}`"
+            :loading="isDeleteLoading(row)"
+            :disabled="isBusy() && !isDeleteLoading(row)"
             @click="emit('delete', row)"
           >
             删除

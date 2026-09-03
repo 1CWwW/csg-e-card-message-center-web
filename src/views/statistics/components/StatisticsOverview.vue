@@ -1,11 +1,20 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { Calendar, CircleCheck, DataAnalysis, EditPen } from '@element-plus/icons-vue'
+import {
+  Bottom,
+  Calendar,
+  CircleCheck,
+  DataAnalysis,
+  EditPen,
+  Minus,
+  Top,
+} from '@element-plus/icons-vue'
 import type { MessageRecordOverview } from '../../../types/record'
 import type { StatisticsOverview } from '../../../types/statistics'
 
 const props = defineProps<{
   statisticsData: StatisticsOverview | null
+  recentSevenDayTotal: number
   recordData: MessageRecordOverview | null
   loading: boolean
 }>()
@@ -16,31 +25,17 @@ const formatRate = (value: number | undefined) => `${toNumber(value).toFixed(1)}
 
 const dayOverDay = computed(() => {
   const rate = props.recordData?.dayOverDayRate ?? 0
-
-  if (rate > 0) {
-    return {
-      text: `↑ ${rate.toFixed(1)}% 较昨日`,
-      className: 'is-trend-up',
-    }
-  }
-
-  if (rate < 0) {
-    return {
-      text: `↓ ${Math.abs(rate).toFixed(1)}% 较昨日`,
-      className: 'is-trend-down',
-    }
-  }
-
   return {
-    text: '与昨日持平',
-    className: 'is-trend-flat',
+    icon: rate > 0 ? Top : rate < 0 ? Bottom : Minus,
+    text: `${Math.abs(rate).toFixed(1)}% vs 昨日`,
+    className: rate > 0 ? 'is-trend-up' : rate < 0 ? 'is-trend-down' : 'is-trend-flat',
   }
 })
 
 const cards = computed(() => [
   {
     title: '累计发送量',
-    value: formatNumber(props.statisticsData?.totalCount),
+    value: formatNumber(props.recentSevenDayTotal),
     description: '近 7 天',
     className: 'is-primary',
     icon: DataAnalysis,
@@ -56,6 +51,7 @@ const cards = computed(() => [
     title: '今日发送',
     value: formatNumber(props.recordData?.todayTotal),
     description: dayOverDay.value.text,
+    descriptionIcon: dayOverDay.value.icon,
     className: dayOverDay.value.className,
     icon: Calendar,
   },
@@ -85,6 +81,9 @@ const cards = computed(() => [
       </div>
       <strong class="statistics-overview__value">{{ card.value }}</strong>
       <small class="statistics-overview__description">
+        <el-icon v-if="card.descriptionIcon">
+          <component :is="card.descriptionIcon" />
+        </el-icon>
         {{ card.description }}
       </small>
     </article>
@@ -158,6 +157,11 @@ const cards = computed(() => [
     line-height: 1.3;
     text-overflow: ellipsis;
     white-space: nowrap;
+
+    .el-icon {
+      flex: 0 0 auto;
+      font-size: 14px;
+    }
   }
 
   .is-success &__icon,

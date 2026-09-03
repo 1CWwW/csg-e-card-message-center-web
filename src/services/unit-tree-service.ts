@@ -79,6 +79,41 @@ export const getUnitTreeChildren = async (parentOrgId?: string): Promise<UnitTre
   return request
 }
 
+const collectUnitNodes = async (
+  nodes: UnitTreeNode[],
+  visited: Set<string>,
+): Promise<UnitTreeNode[]> => {
+  const collectedNodes: UnitTreeNode[] = []
+
+  for (const node of nodes) {
+    if (visited.has(node.unitId)) {
+      continue
+    }
+
+    visited.add(node.unitId)
+    collectedNodes.push(node)
+
+    if (node.hasChildren === false) {
+      continue
+    }
+
+    const children = await getUnitTreeChildren(node.unitId)
+    collectedNodes.push(...(await collectUnitNodes(children, visited)))
+  }
+
+  return collectedNodes
+}
+
+export const getUnitDescendantNodes = async (parentOrgId: string): Promise<UnitTreeNode[]> => {
+  const children = await getUnitTreeChildren(parentOrgId)
+  return collectUnitNodes(children, new Set([parentOrgId]))
+}
+
+export const getAllUnitNodes = async (): Promise<UnitTreeNode[]> => {
+  const roots = await getUnitTreeChildren()
+  return collectUnitNodes(roots, new Set())
+}
+
 export const resolveUnitNodes = async (
   orgIds: string[],
   options?: RequestFeedbackOptions,

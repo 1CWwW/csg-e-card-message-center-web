@@ -131,6 +131,11 @@ export interface TemplateOverview {
   pendingCount: number
 }
 
+export interface TemplateRecentRecordSummary {
+  date: string
+  count: number
+}
+
 export interface TemplateCreateForm {
   templateName: string
   sceneId: string

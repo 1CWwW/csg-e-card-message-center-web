@@ -7,9 +7,8 @@ import type { FilterOption } from '../../../types/api'
 import {
   messagePriorityOptions,
   type MessagePriority,
-  type PushMode,
 } from '../../../types/push'
-import type { MessageRecordQuery } from '../../../types/record'
+import type { MessageCallType, MessageRecordQuery } from '../../../types/record'
 
 interface RecordFilterModel {
   msgId: string
@@ -22,7 +21,7 @@ interface RecordFilterModel {
   userId: string
   userOrgId: string
   priority: MessagePriority | ''
-  pushMode: PushMode | ''
+  callType: MessageCallType | ''
   startDate: string
   endDate: string
 }
@@ -45,6 +44,8 @@ const channelLoaded = ref(false)
 const templates = ref<FilterOption[]>([])
 const templateLoading = ref(false)
 const templateLoaded = ref(false)
+const startDateInputRef = ref<HTMLInputElement | null>(null)
+const endDateInputRef = ref<HTMLInputElement | null>(null)
 
 const form = reactive<RecordFilterModel>({
   msgId: '',
@@ -57,7 +58,7 @@ const form = reactive<RecordFilterModel>({
   userId: '',
   userOrgId: '',
   priority: '',
-  pushMode: '',
+  callType: '',
   startDate: '',
   endDate: '',
 })
@@ -89,7 +90,7 @@ const buildPayload = (): Partial<MessageRecordQuery> => {
   if (form.userId.trim()) payload.userId = form.userId.trim()
   if (form.userOrgId) payload.userOrgId = form.userOrgId
   if (form.priority) payload.priority = form.priority
-  if (form.pushMode) payload.pushMode = form.pushMode
+  if (form.callType) payload.callType = form.callType
 
   if (form.startDate) payload.startTime = `${form.startDate} 00:00:00`
   if (form.endDate) payload.endTime = `${form.endDate} 23:59:59`
@@ -114,9 +115,15 @@ const reset = () => {
   form.userId = ''
   form.userOrgId = ''
   form.priority = ''
-  form.pushMode = ''
+  form.callType = ''
   form.startDate = ''
   form.endDate = ''
+  if (startDateInputRef.value) {
+    startDateInputRef.value.value = ''
+  }
+  if (endDateInputRef.value) {
+    endDateInputRef.value.value = ''
+  }
   emit('reset')
 }
 
@@ -287,24 +294,28 @@ const loadTemplateOptions = async (visible: boolean) => {
         </el-select>
       </el-form-item>
       <el-form-item>
-        <el-select v-model="form.pushMode" clearable placeholder="全部调用方式">
+        <el-select v-model="form.callType" clearable placeholder="全部调用方式">
           <el-option label="全部调用方式" value="" />
-          <el-option label="同步调用" value="sync" />
-          <el-option label="异步调用" value="async" />
+          <el-option label="同步调用" value="SYNC" />
+          <el-option label="异步调用" value="ASYNC" />
         </el-select>
       </el-form-item>
       <el-form-item class="record-filter__time">
         <div class="record-filter__date-range">
           <input
+            ref="startDateInputRef"
             v-model="form.startDate"
             type="date"
+            max="9999-12-31"
             class="record-filter__native-date"
             aria-label="开始日期"
           />
           <span>至</span>
           <input
+            ref="endDateInputRef"
             v-model="form.endDate"
             type="date"
+            max="9999-12-31"
             class="record-filter__native-date"
             aria-label="结束日期"
           />
