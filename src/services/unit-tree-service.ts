@@ -6,7 +6,7 @@ import {
 } from '../api/organization'
 import { mockUnitTree } from '../mock/unit-tree'
 import type { RequestFeedbackOptions } from '../types/api'
-import type { OrganizationTreeNode, UnitTreeNode } from '../types/unit'
+import type { OrganizationTreeNode, UnitTreeNode, UnitTraversalOptions } from '../types/unit'
 
 export const isMockUnitTreeEnabled = () => import.meta.env.VITE_USE_MOCK_UNIT_TREE === 'true'
 
@@ -27,38 +27,41 @@ const normalizeUnitTree = (nodes: OrganizationTreeNode[]): UnitTreeNode[] => {
     unitName: node.orgName,
     parentUnitId: node.parentOrgId,
     sortOrder: node.orgLevel,
-    hasChildren: node.hasChildren ?? Boolean(node.children?.length),
+    hasChildren: node.hasChildren === true,
     children: normalizeUnitTree(node.children ?? []),
   }))
 }
 
-const unitChildrenCache = new Map<string, UnitTreeNode[]>()
-const unitChildrenRequests = new Map<string, Promise<UnitTreeNode[]>>()
+const unitChildrenCache = new Map<string | undefined, UnitTreeNode[]>()
+const unitChildrenRequests = new Map<string | undefined, Promise<UnitTreeNode[]>>()
 const resolvedUnitCache = new Map<string, UnitTreeNode>()
-const ROOT_CACHE_KEY = '__root__'
+// 展示信息与直接子节点缓存独立；搜索/回显中的空 children 不能标记已加载。
+const cacheNodeDetails = (nodes: UnitTreeNode[]) => {
+  nodes.forEach((node) => resolvedUnitCache.set(node.unitId, { ...node, children: [] }))
+}
 
-export const getUnitTreeChildren = async (parentOrgId?: string): Promise<UnitTreeNode[]> => {
+export const getUnitTreeChildren = (parentOrgId?: string): Promise<UnitTreeNode[]> => {
   if (isMockUnitTreeEnabled()) {
     const tree = normalizeMockUnitTree(mockUnitTree)
     if (!parentOrgId) {
-      return tree
+      return Promise.resolve(tree)
     }
 
     const queue = [...tree]
     while (queue.length) {
       const node = queue.shift()
       if (node?.unitId === parentOrgId) {
-        return node.children
+        return Promise.resolve(node.children)
       }
       queue.push(...(node?.children ?? []))
     }
-    return []
+    return Promise.resolve([])
   }
 
-  const cacheKey = parentOrgId || ROOT_CACHE_KEY
+  const cacheKey = parentOrgId
   const cached = unitChildrenCache.get(cacheKey)
   if (cached) {
-    return cached
+    return Promise.resolve(cached)
   }
 
   const pendingRequest = unitChildrenRequests.get(cacheKey)
@@ -70,7 +73,7 @@ export const getUnitTreeChildren = async (parentOrgId?: string): Promise<UnitTre
     .then((nodes) => {
       const normalizedNodes = normalizeUnitTree(nodes)
       unitChildrenCache.set(cacheKey, normalizedNodes)
-      normalizedNodes.forEach((node) => resolvedUnitCache.set(node.unitId, node))
+      cacheNodeDetails(normalizedNodes)
       return normalizedNodes
     })
     .finally(() => unitChildrenRequests.delete(cacheKey))
@@ -79,39 +82,55 @@ export const getUnitTreeChildren = async (parentOrgId?: string): Promise<UnitTre
   return request
 }
 
-const collectUnitNodes = async (
+export const collectUnitNodes = async (
   nodes: UnitTreeNode[],
-  visited: Set<string>,
+  options: UnitTraversalOptions = {},
 ): Promise<UnitTreeNode[]> => {
-  const collectedNodes: UnitTreeNode[] = []
-
-  for (const node of nodes) {
-    if (visited.has(node.unitId)) {
-      continue
-    }
-
-    visited.add(node.unitId)
-    collectedNodes.push(node)
-
-    if (node.hasChildren === false) {
-      continue
-    }
-
-    const children = await getUnitTreeChildren(node.unitId)
-    collectedNodes.push(...(await collectUnitNodes(children, visited)))
+  const queue: UnitTreeNode[] = []
+  const visited = new Set<string>()
+  const collected: UnitTreeNode[] = []
+  let completed = 0
+  let failed = false
+  const ensureActive = () => {
+    if (failed || options.isCancelled?.()) throw new Error('单位选择任务已取消')
   }
-
-  return collectedNodes
-}
-
-export const getUnitDescendantNodes = async (parentOrgId: string): Promise<UnitTreeNode[]> => {
-  const children = await getUnitTreeChildren(parentOrgId)
-  return collectUnitNodes(children, new Set([parentOrgId]))
-}
-
-export const getAllUnitNodes = async (): Promise<UnitTreeNode[]> => {
-  const roots = await getUnitTreeChildren()
-  return collectUnitNodes(roots, new Set())
+  const enqueue = (items: UnitTreeNode[]) => {
+    for (const node of items) {
+      if (visited.has(node.unitId)) continue
+      visited.add(node.unitId)
+      queue.push(node)
+      collected.push(node)
+    }
+  }
+  const report = () => options.onProgress?.({
+    collected: collected.length, completed, discovered: visited.size,
+  })
+  ensureActive()
+  enqueue(nodes)
+  report()
+  // 每批最多四个节点；失败停止后续批次，完整遍历结束才交付结果。
+  for (let cursor = 0; cursor < queue.length;) {
+    ensureActive()
+    const batch = queue.slice(cursor, cursor + 4)
+    cursor += batch.length
+    try {
+      await Promise.all(batch.map(async (node) => {
+        ensureActive()
+        const children = options.local
+          ? node.children
+          : node.hasChildren === true ? await getUnitTreeChildren(node.unitId) : []
+        ensureActive()
+        enqueue(children)
+        completed += 1
+        report()
+      }))
+    } catch (error) {
+      failed = true
+      throw error
+    }
+  }
+  ensureActive()
+  return collected
 }
 
 export const resolveUnitNodes = async (
@@ -140,8 +159,10 @@ export const resolveUnitNodes = async (
 
   const missingIds = uniqueOrgIds.filter((orgId) => !resolvedUnitCache.has(orgId))
   if (missingIds.length) {
-    const nodes = normalizeUnitTree(await resolveOrganizations(missingIds, options))
-    nodes.forEach((node) => resolvedUnitCache.set(node.unitId, node))
+    for (let offset = 0; offset < missingIds.length; offset += 200) {
+      const nodes = normalizeUnitTree(await resolveOrganizations(missingIds.slice(offset, offset + 200), options))
+      cacheNodeDetails(nodes)
+    }
   }
 
   return uniqueOrgIds
@@ -156,7 +177,7 @@ export const searchUnitNodes = async (keyword: string): Promise<UnitTreeNode[]> 
   }
 
   const nodes = normalizeUnitTree(await searchOrganizations(normalizedKeyword))
-  nodes.forEach((node) => resolvedUnitCache.set(node.unitId, node))
+  cacheNodeDetails(nodes)
   return nodes
 }
 
@@ -170,6 +191,7 @@ const normalizeMockUnitTree = (nodes: UnitTreeNode[]): UnitTreeNode[] => {
     nameFullPath: node.nameFullPath ?? null,
     orgLevel: node.orgLevel ?? null,
     state: node.state ?? 1,
+    hasChildren: node.hasChildren ?? Boolean(node.children?.length),
     children: normalizeMockUnitTree(node.children ?? []),
   }))
 }

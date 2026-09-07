@@ -43,6 +43,7 @@ const emit = defineEmits<{
 
 const formRef = ref<FormInstance>()
 const allUnits = ref(true)
+const unitSelectionBlocked = ref(false)
 const formModel = reactive<TemplateCopyModel>({
   templateName: '',
   sceneId: '',
@@ -154,13 +155,13 @@ const closeDialog = () => {
 }
 
 const submitForm = async () => {
-  if (props.submitLoading) {
+  if (props.submitLoading || unitSelectionBlocked.value) {
     return
   }
 
   const valid = await formRef.value?.validate()
 
-  if (!valid) {
+  if (!valid || unitSelectionBlocked.value) {
     return
   }
 
@@ -169,7 +170,7 @@ const submitForm = async () => {
     sceneId: formModel.sceneId,
     channelType: formModel.channelType,
     copyContent: formModel.copyContent,
-    unitIds: [...formModel.unitIds],
+    unitIds: [...new Set(formModel.unitIds)],
   })
 }
 </script>
@@ -293,6 +294,9 @@ const submitForm = async () => {
           </el-checkbox>
           <UnitTreeSelect
             v-model="formModel.unitIds"
+            :active="modelValue"
+            :context-key="sourceTemplate?.id ?? ''"
+            @selection-blocked="unitSelectionBlocked = $event"
             multiple
             :data="unitTree"
             :loading="unitTreeLoading"
@@ -312,6 +316,7 @@ const submitForm = async () => {
         class="template-copy-dialog__confirm"
         type="primary"
         :loading="submitLoading"
+        :disabled="unitSelectionBlocked"
         @click="submitForm"
       >
         确认复制
@@ -487,6 +492,11 @@ const submitForm = async () => {
 .template-copy-dialog__all-units {
   width: 100%;
   margin-bottom: 8px;
+  pointer-events: none;
+
+  :deep(.el-checkbox__input) {
+    pointer-events: auto;
+  }
 
   :deep(.el-checkbox__label) {
     color: var(--app-text-primary);

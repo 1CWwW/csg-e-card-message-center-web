@@ -148,6 +148,7 @@ const resetSearch = () => {
       <el-form-item>
         <UnitTreeSelect
           v-model="searchForm.unitId"
+          dropdown-below
           :data="unitTree"
           :loading="unitTreeLoading"
           placeholder="适用单位"

@@ -52,6 +52,7 @@ const emit = defineEmits<{
 
 const formRef = ref<FormInstance>()
 const allUnits = ref(true)
+const unitSelectionBlocked = ref(false)
 const MAX_ELINK_PRIORITY = 99999
 const SENDER_NUMBER_PATTERN = /^1[3-9]\d{9}$/
 const EMAIL_PATTERN = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/
@@ -297,7 +298,7 @@ const buildCreateForm = () => {
     typeConfig: buildTypeConfig(),
     priority: formModel.priority,
     status: formModel.status,
-    unitIds: [...formModel.unitIds],
+    unitIds: [...new Set(formModel.unitIds)],
   }
 
   return payload
@@ -313,20 +314,20 @@ const buildUpdateForm = () => {
     typeConfig: buildTypeConfig(),
     priority: formModel.priority,
     status: formModel.status,
-    unitIds: [...formModel.unitIds],
+    unitIds: [...new Set(formModel.unitIds)],
   }
 
   return payload
 }
 
 const submitForm = async () => {
-  if (props.submitLoading) {
+  if (props.submitLoading || unitSelectionBlocked.value) {
     return
   }
 
   const valid = await formRef.value?.validate()
 
-  if (!valid) {
+  if (!valid || unitSelectionBlocked.value) {
     return
   }
 
@@ -408,6 +409,9 @@ const submitForm = async () => {
           </el-checkbox>
           <UnitTreeSelect
             v-model="formModel.unitIds"
+            :active="modelValue"
+            :context-key="channelDetail?.id ?? ''"
+            @selection-blocked="unitSelectionBlocked = $event"
             multiple
             :data="unitTree"
             :loading="unitTreeLoading"
@@ -423,7 +427,7 @@ const submitForm = async () => {
 
     <template #footer>
       <el-button :disabled="submitLoading" @click="closeDialog">取消</el-button>
-      <el-button class="channel-dialog__confirm" type="primary" :loading="submitLoading" @click="submitForm">
+      <el-button class="channel-dialog__confirm" type="primary" :loading="submitLoading" :disabled="unitSelectionBlocked" @click="submitForm">
         {{ isCreateMode ? '确认创建' : '保存修改' }}
       </el-button>
     </template>
@@ -456,6 +460,11 @@ const submitForm = async () => {
 .channel-dialog__all-units {
   width: 100%;
   margin-bottom: 8px;
+  pointer-events: none;
+
+  :deep(.el-checkbox__input) {
+    pointer-events: auto;
+  }
 
   :deep(.el-checkbox__label) {
     color: var(--app-text-primary);

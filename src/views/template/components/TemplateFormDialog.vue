@@ -54,6 +54,7 @@ const emit = defineEmits<{
 
 const formRef = ref<FormInstance>()
 const allUnits = ref(true)
+const unitSelectionBlocked = ref(false)
 const createSceneParams = ref<SceneParamItem[]>([])
 const sceneParamsLoading = ref(false)
 const sceneParamsFailed = ref(false)
@@ -243,13 +244,13 @@ const closeDialog = () => {
 }
 
 const submitForm = async () => {
-  if (props.submitLoading) {
+  if (props.submitLoading || unitSelectionBlocked.value) {
     return
   }
 
   const valid = await formRef.value?.validate()
 
-  if (!valid) {
+  if (!valid || unitSelectionBlocked.value) {
     return
   }
 
@@ -258,7 +259,7 @@ const submitForm = async () => {
       templateName: formModel.templateName.trim(),
       sceneId: formModel.sceneId,
       channelType: formModel.channelType,
-      unitIds: [...formModel.unitIds],
+      unitIds: [...new Set(formModel.unitIds)],
     })
     return
   }
@@ -268,7 +269,7 @@ const submitForm = async () => {
     sceneId: formModel.sceneId,
     channelType: formModel.channelType,
     status: formModel.status,
-    unitIds: [...formModel.unitIds],
+    unitIds: [...new Set(formModel.unitIds)],
   })
 }
 </script>
@@ -385,6 +386,9 @@ const submitForm = async () => {
           </el-checkbox>
           <UnitTreeSelect
             v-model="formModel.unitIds"
+            :active="modelValue"
+            :context-key="templateDetail?.id ?? ''"
+            @selection-blocked="unitSelectionBlocked = $event"
             multiple
             :data="unitTree"
             :loading="unitTreeLoading"
@@ -425,6 +429,7 @@ const submitForm = async () => {
         class="template-form-dialog__confirm"
         type="primary"
         :loading="submitLoading"
+        :disabled="unitSelectionBlocked"
         @click="submitForm"
       >
         {{ isCreateMode ? '确认创建' : '保存修改' }}
@@ -499,6 +504,11 @@ const submitForm = async () => {
 .template-form-dialog__all-units {
   width: 100%;
   margin-bottom: 8px;
+  pointer-events: none;
+
+  :deep(.el-checkbox__input) {
+    pointer-events: auto;
+  }
 
   :deep(.el-checkbox__label) {
     color: var(--app-text-primary);

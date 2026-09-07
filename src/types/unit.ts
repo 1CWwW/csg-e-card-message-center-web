@@ -30,3 +30,19 @@ export interface OrganizationTreeNode {
 export interface OrganizationResolvedNode extends OrganizationTreeNode {
   ancestors?: OrganizationTreeNode[] | null
 }
+
+export interface UnitTraversalProgress {
+  collected: number
+  completed: number
+  discovered: number
+}
+
+export interface UnitTraversalOptions {
+  isCancelled?: () => boolean
+  onProgress?: (progress: UnitTraversalProgress) => void
+  local?: boolean
+}
+
+export type UnitSelectionTask =
+  | { kind: 'all' }
+  | { kind: 'branch'; node: UnitTreeNode; checked: boolean }
