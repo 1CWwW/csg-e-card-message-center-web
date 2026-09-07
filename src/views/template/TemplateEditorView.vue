@@ -36,6 +36,9 @@ import type {
 import TemplateBlocklyToolbox from './components/TemplateBlocklyToolbox.vue'
 import type { TemplateToolboxBlockState } from './components/TemplateBlocklyToolbox.vue'
 import TemplateReferenceDialog from './components/TemplateReferenceDialog.vue'
+import TemplateCanvasBodyDialog from './components/TemplateCanvasBodyDialog.vue'
+import type { TextNode } from '../../types/text-template'
+import { CANVAS_BODY_TYPE, prepareCanvasPreview, readCanvasNodes, validateCanvasBodies } from './blockly/canvasBody'
 import {
   rebindSceneParamBlocks,
   registerTemplateBlocks,
@@ -139,6 +142,13 @@ const previewExpanded = ref(false)
 const previewing = ref(false)
 const previewResult = ref<TemplatePreviewResult | null>(null)
 const previewValues = reactive<Record<string, string | boolean>>({})
+const canvasBodyVisible = ref(false)
+const canvasBodyNodes = ref<TextNode[]>([])
+const canvasBodyBlockId = ref('')
+const hasCanvasBody = ref(false)
+const canvasDraftLoaded = ref(false)
+const canvasDraftWarning = ref('')
+const canvasDraftBackup = ref('')
 
 let workspace: Blockly.WorkspaceSvg | null = null
 let connectionOverlay: TemplateConnectionOverlay | null = null
@@ -159,7 +169,7 @@ const templateId = computed(() => {
 })
 
 const toolboxParams = computed(() => toolboxData.value?.params ?? [])
-const saveStateText = computed(() => (dirty.value ? '未保存' : '已保存'))
+const saveStateText = computed(() => dirty.value ? '未保存' : canvasDraftLoaded.value ? '画布草稿已保存' : '已保存')
 const channelTypeText = computed(() =>
   getChannelTypeLabel(
     templateDetail.value?.channelType || '',
@@ -213,6 +223,42 @@ const findWorkspaceBlockFromTarget = (target: EventTarget | null) => {
       | Blockly.BlockSvg
       | undefined) ?? null
   )
+}
+
+const openCanvasBody = (block: Blockly.Block) => {
+  try {
+    canvasBodyNodes.value = readCanvasNodes(String(block.getFieldValue('CONTENT_JSON')))
+    canvasBodyBlockId.value = block.id
+    canvasBodyVisible.value = true
+  } catch { ElMessage.error('正文节点内容格式异常，原内容已保留，请检查草稿数据') }
+}
+const handleCanvasDoubleClick = (event: MouseEvent) => {
+  const block = findWorkspaceBlockFromTarget(event.target)
+  if (block?.type !== CANVAS_BODY_TYPE) return
+  event.preventDefault(); event.stopPropagation()
+  openCanvasBody(block)
+}
+const applyCanvasBody = (nodes: TextNode[]) => {
+  const block = workspace?.getBlockById(canvasBodyBlockId.value)
+  if (!block) { ElMessage.warning('节点已被删除'); return }
+  block.setFieldValue(JSON.stringify(nodes), 'CONTENT_JSON')
+  dirty.value = true
+  previewResult.value = null
+  refreshWorkspaceState()
+}
+const exportCanvasDraft = () => {
+  const content = canvasDraftBackup.value || JSON.stringify({ schemaVersion: 1, workspace: saveWorkspaceWithLinks() })
+  const url = URL.createObjectURL(new Blob([content], { type: 'application/json;charset=utf-8' }))
+  const link = document.createElement('a'); link.href = url; link.download = `画布草稿-${templateId.value}.json`; link.click()
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+}
+const discardCanvasDraft = async () => {
+  try { await ElMessageBox.confirm('将清除本地画布草稿并重新加载服务器内容，建议先导出备份。', '恢复服务器版本', { type: 'warning' }) } catch { return }
+  try {
+    localStorage.removeItem(`msg-canvas-draft:${templateId.value}`)
+    canvasDraftLoaded.value = false; canvasDraftWarning.value = ''; canvasDraftBackup.value = ''
+    await loadEditor()
+  } catch { ElMessage.error('本地草稿清除失败') }
 }
 
 const renderBlockSelection = () => {
@@ -352,11 +398,13 @@ const handleSelectionPointerDown = (event: PointerEvent) => {
 }
 
 const attachWorkspaceSelection = () => {
+  workspaceContainer.value?.addEventListener('dblclick', handleCanvasDoubleClick, true)
   workspaceContainer.value?.addEventListener('pointerdown', handleSelectionPointerDown, true)
   workspaceContainer.value?.addEventListener('pointermove', handleCanvasPointerMove, true)
 }
 
 const detachWorkspaceSelection = () => {
+  workspaceContainer.value?.removeEventListener('dblclick', handleCanvasDoubleClick, true)
   workspaceContainer.value?.removeEventListener('pointerdown', handleSelectionPointerDown, true)
   workspaceContainer.value?.removeEventListener('pointermove', handleCanvasPointerMove, true)
   window.removeEventListener('pointermove', handleSelectionPointerMove, true)
@@ -388,6 +436,7 @@ const refreshWorkspaceState = () => {
   }
 
   workspaceScale.value = Math.round(workspace.getScale() * 100)
+  hasCanvasBody.value = workspace.getAllBlocks(false).some(b => b.type === CANVAS_BODY_TYPE)
   hasWorkspaceBlocks.value = workspace.getAllBlocks(false).length > 0
   updateToolbarState()
   renderBlockSelection()
@@ -1402,11 +1451,37 @@ const initializeWorkspace = async () => {
   })
 
   let reboundCount = 0
-  const document = parseBlocklyDocument(templateDetail.value?.blocklyJson)
+  let document = parseBlocklyDocument(templateDetail.value?.blocklyJson)
+  canvasDraftLoaded.value = false
+  canvasDraftWarning.value = ''
+  canvasDraftBackup.value = ''
+  try {
+    const raw = localStorage.getItem(`msg-canvas-draft:${templateId.value}`)
+    if (raw) {
+      canvasDraftBackup.value = raw
+      const local: unknown = JSON.parse(raw)
+      if (!local || typeof local !== 'object') throw new Error('画布草稿格式异常')
+      const draft = local as Record<string, unknown>
+      if (draft.templateId !== templateId.value || draft.sceneId !== templateDetail.value?.sceneId || draft.baseUpdatedAt !== templateDetail.value?.updatedAt) throw new Error('服务器模板已变化，本地草稿未自动恢复。请先导出备份。')
+      const parsed = parseBlocklyDocument(draft.document as Record<string, unknown>)
+      if (!parsed) throw new Error('画布草稿格式异常，原草稿已保留')
+      document = parsed
+      canvasDraftLoaded.value = true
+      canvasDraftBackup.value = ''
+    }
+  } catch (e) { canvasDraftWarning.value = readErrorMessage(e, '无法读取画布草稿') }
   if (document) {
     restoringWorkspace = true
     try {
-      loadTemplateWorkspace(workspace, document.workspace)
+      try { loadTemplateWorkspace(workspace, document.workspace) }
+      catch (e) {
+        if (!canvasDraftLoaded.value) throw e
+        canvasDraftWarning.value = '本地画布草稿无法恢复，已加载服务器内容，请导出原草稿备份。'
+        canvasDraftBackup.value = localStorage.getItem(`msg-canvas-draft:${templateId.value}`) || ''
+        canvasDraftLoaded.value = false
+        document = parseBlocklyDocument(templateDetail.value?.blocklyJson) ?? { schemaVersion: 1, workspace: {} }
+        loadTemplateWorkspace(workspace, document.workspace)
+      }
       connectionOverlay.setLinks(
         rewriteMathOperandPrefixLinks(readTemplateLinks(document.workspace)),
       )
@@ -1528,6 +1603,21 @@ const saveContent = async () => {
   saveErrors.value = []
 
   try {
+    const bodyErrors = validateCanvasBodies(workspace, toolboxParams.value)
+    if (bodyErrors.length) { saveErrors.value = bodyErrors; ElMessage.error(bodyErrors[0]); return }
+    if (hasCanvasBody.value) {
+      if (canvasDraftWarning.value) { ElMessage.warning('请先处理原画布草稿，避免覆盖'); return }
+      const latest = await getTemplateDetail(templateId.value)
+      if (latest.updatedAt !== templateDetail.value?.updatedAt || latest.sceneId !== templateDetail.value?.sceneId) throw new Error('服务器内容已变化，请导出草稿后重新加载')
+      localStorage.setItem(`msg-canvas-draft:${templateId.value}`, JSON.stringify({
+        templateId: templateId.value, sceneId: templateDetail.value?.sceneId, baseUpdatedAt: templateDetail.value?.updatedAt,
+        document: { schemaVersion: 1, workspace: saveWorkspaceWithLinks() },
+      }))
+      canvasDraftLoaded.value = true
+      dirty.value = false
+      ElMessage.success('画布草稿已保存到当前浏览器，服务器模板未变更')
+      return
+    }
     if (toolboxData.value) {
       rebindSceneParamBlocks(workspace, toolboxData.value)
       const paramErrors = validateSceneParamBlocks(workspace, toolboxData.value)
@@ -1571,6 +1661,10 @@ const saveContent = async () => {
     }
 
     dirty.value = false
+    if (canvasDraftLoaded.value) {
+      try { localStorage.removeItem(`msg-canvas-draft:${templateId.value}`); canvasDraftLoaded.value = false }
+      catch { ElMessage.warning('服务器保存成功，但本地草稿未能清除') }
+    }
     ElMessage.success(isSavedEmptyWorkspace ? '模板内容已清空' : '模板内容保存成功')
   } catch (error) {
     const message = readErrorMessage(error, '模板内容保存失败，请稍后重试。')
@@ -1589,6 +1683,8 @@ const runPreview = async () => {
 
   previewing.value = true
   try {
+    const bodyErrors = validateCanvasBodies(workspace, toolboxParams.value)
+    if (bodyErrors.length) { saveErrors.value = bodyErrors; ElMessage.error(bodyErrors[0]); return }
     rebindSceneParamBlocks(workspace, toolboxData.value)
     const paramErrors = validateSceneParamBlocks(workspace, toolboxData.value)
     if (paramErrors.length > 0) {
@@ -1626,7 +1722,7 @@ const runPreview = async () => {
     previewResult.value = await previewTemplate({
       templateId: templateId.value,
       schemaVersion: BLOCKLY_SCHEMA_VERSION,
-      workspace: saveWorkspaceWithLinks(),
+      workspace: prepareCanvasPreview(saveWorkspaceWithLinks(), toolboxParams.value, values),
       values,
     })
   } catch {
@@ -1675,7 +1771,7 @@ const createToolboxBlock = (
     screenCoordinate,
   )
 
-  Blockly.serialization.blocks.append(
+  const added = Blockly.serialization.blocks.append(
     {
       ...state,
       x: workspaceCoordinate.x,
@@ -1685,6 +1781,7 @@ const createToolboxBlock = (
     { recordUndo: true },
   )
   refreshWorkspaceState()
+  if (state.type === CANVAS_BODY_TYPE && added) openCanvasBody(added)
 }
 
 const handleWorkspaceDrop = (event: DragEvent) => {
@@ -1825,7 +1922,8 @@ const pasteCopiedBlocks = () => {
       const deltaY = pasteOrigin.y - anchorPoint.y
       pastedBlocks.forEach((block) => block.moveBy(deltaX, deltaY, ['paste-anchor']))
     }
-  } catch {
+  } catch (error) {
+    if (hasCanvasBody.value && error instanceof Error) ElMessage.error(error.message)
     ElMessage.error('积木粘贴失败，请重新复制后再试')
     return
   } finally {
@@ -1975,6 +2073,7 @@ const returnToList = () => {
 }
 
 const handleShortcut = (event: KeyboardEvent) => {
+  if (canvasBodyVisible.value) return
   const key = event.key.toLowerCase()
   const hasModifier = event.ctrlKey || event.metaKey
   const consumeShortcut = () => {
@@ -2081,10 +2180,15 @@ watch(previewExpanded, async () => {
             :disabled="loading || loadFailed || !ready || !dirty"
             @click="saveContent"
           >
-            保存
+            {{ hasCanvasBody ? '保存画布草稿' : '保存' }}
           </el-button>
         </div>
       </header>
+
+      <el-alert v-if="hasCanvasBody || canvasDraftLoaded || canvasDraftWarning" type="info" :closable="false" :title="canvasDraftWarning || '正文模板节点支持整段编辑与条件占位符；当前保存为本地画布草稿，实际发送仍使用服务器版本。'">
+        <el-button link @click="exportCanvasDraft">导出画布草稿</el-button>
+        <el-button v-if="canvasDraftLoaded || canvasDraftWarning" link @click="discardCanvasDraft">恢复服务器版本</el-button>
+      </el-alert>
 
       <el-alert
         v-if="loadFailed"
@@ -2226,6 +2330,7 @@ watch(previewExpanded, async () => {
       :template-id="templateId"
       @load="loadReference"
     />
+    <TemplateCanvasBodyDialog v-if="canvasBodyVisible" :key="canvasBodyBlockId" v-model="canvasBodyVisible" :initial-nodes="canvasBodyNodes" :params="toolboxParams" @apply="applyCanvasBody" />
   </section>
 </template>
 

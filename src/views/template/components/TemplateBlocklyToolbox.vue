@@ -99,6 +99,15 @@ const groups = computed<ToolboxGroup[]>(() => [
     title: '文本',
     items: [
       {
+        key: 'template_body',
+        label: '正文模板',
+        tag: '整段编辑',
+        colour: '#3f7bf3',
+        tagClass: 'is-text',
+        title: '双击节点编辑正文与占位符',
+        state: { type: 'template_body' },
+      },
+      {
         key: 'text',
         label: '字符串常量',
         tag: '输入文本',

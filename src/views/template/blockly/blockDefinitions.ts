@@ -2,6 +2,7 @@ import * as Blockly from 'blockly'
 import 'blockly/blocks'
 import * as zhHans from 'blockly/msg/zh-hans'
 import type { TemplateToolboxData } from '../../../types/template'
+import { registerCanvasBody } from './canvasBody'
 
 interface SceneParamExtraState {
   sceneId: string
@@ -291,6 +292,7 @@ export const registerTemplateBlocks = () => {
   ) as Record<string, string>
 
   Blockly.setLocale(locale)
+  registerCanvasBody()
 
   Blockly.Blocks.message_content = {
     init() {
