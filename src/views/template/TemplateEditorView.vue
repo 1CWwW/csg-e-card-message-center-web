@@ -16,6 +16,7 @@ import {
   ZoomOut,
 } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
+import { getFriendlyBusinessMessage } from '../../utils/request'
 import {
   getTemplateDetail,
   getTemplateToolbox,
@@ -36,6 +37,11 @@ import type {
 import TemplateBlocklyToolbox from './components/TemplateBlocklyToolbox.vue'
 import type { TemplateToolboxBlockState } from './components/TemplateBlocklyToolbox.vue'
 import TemplateReferenceDialog from './components/TemplateReferenceDialog.vue'
+import TemplateRuleGroupDialog from './components/TemplateRuleGroupDialog.vue'
+import TemplateRuleNodeDialog from './components/TemplateRuleNodeDialog.vue'
+import type { CanvasRuleNode, RuleMessageList, RuleTemplateDraft, RuleTemplatePreview, TemplateRuleGroup } from '../../types/template-rule'
+import { collectRuleDraft, importRuleDraftToCanvas, isRuleNode, parseCanvasRuleNode, readRuleNode, RULE_GROUP, RULE_FALLBACK, RULE_LIST, RULE_VERSION, updateRuleLabels } from './blockly/ruleCanvas'
+import { DEFAULT_DATE_PATTERN, parseRuleDraft, ruleSummary, validateDraft } from './rules/engine'
 import {
   rebindSceneParamBlocks,
   registerTemplateBlocks,
@@ -139,6 +145,16 @@ const previewExpanded = ref(false)
 const previewing = ref(false)
 const previewResult = ref<TemplatePreviewResult | null>(null)
 const previewValues = reactive<Record<string, string | boolean>>({})
+const ruleNodeVisible = ref(false)
+const ruleNodeInitial = ref<CanvasRuleNode>()
+const ruleNodeId = ref('')
+const ruleNodePriority = ref(1)
+const ruleLists = ref<RuleMessageList[]>([])
+const ruleCanvasActive = ref(false)
+const ruleCanvasSaved = ref(false)
+const ruleDraftProblem = ref('')
+const legacyRuleDraft = ref<RuleTemplateDraft>()
+const ruleMatch = ref<RuleTemplatePreview>()
 
 let workspace: Blockly.WorkspaceSvg | null = null
 let connectionOverlay: TemplateConnectionOverlay | null = null
@@ -159,7 +175,7 @@ const templateId = computed(() => {
 })
 
 const toolboxParams = computed(() => toolboxData.value?.params ?? [])
-const saveStateText = computed(() => (dirty.value ? '未保存' : '已保存'))
+const saveStateText = computed(() => dirty.value ? '未保存' : ruleCanvasSaved.value ? '已恢复本地草稿' : '已保存')
 const channelTypeText = computed(() =>
   getChannelTypeLabel(
     templateDetail.value?.channelType || '',
@@ -213,6 +229,46 @@ const findWorkspaceBlockFromTarget = (target: EventTarget | null) => {
       | Blockly.BlockSvg
       | undefined) ?? null
   )
+}
+
+const openRuleNode = (block: Blockly.Block) => {
+  try {
+    ruleNodeInitial.value = readRuleNode(block)
+    ruleNodeId.value = block.id
+    ruleNodePriority.value = Number(block.getFieldValue('PRIORITY') || 1)
+    ruleNodeVisible.value = true
+  } catch (e) { ElMessage.error(readErrorMessage(e, '节点配置无效')) }
+}
+const handleRuleDoubleClick = (event: MouseEvent) => {
+  const block = findWorkspaceBlockFromTarget(event.target)
+  if (!block || !isRuleNode(block.type)) return
+  event.preventDefault(); event.stopPropagation()
+  openRuleNode(block)
+}
+const applyRuleNode = (node: CanvasRuleNode, priority: number) => {
+  const block = workspace?.getBlockById(ruleNodeId.value)
+  if (!block) { ElMessage.warning('节点已被删除'); return }
+  if (block.type === RULE_VERSION && (!Number.isInteger(priority) || priority < 1 || workspace?.getAllBlocks(false).some(b => b.type === RULE_VERSION && b.id !== block.id && Number(b.getFieldValue('PRIORITY')) === priority))) {
+    ElMessage.warning('优先级必须为不重复的正整数'); return
+  }
+  try {
+    parseCanvasRuleNode(JSON.stringify(node), block.type, block.id)
+    Blockly.Events.setGroup(true)
+    try {
+      block.setFieldValue(JSON.stringify(node), 'RULE_DATA')
+      if (block.type === RULE_VERSION) block.setFieldValue(priority, 'PRIORITY')
+    } finally { Blockly.Events.setGroup(false) }
+    ruleNodeVisible.value = false; dirty.value = true; ruleMatch.value = undefined; previewResult.value = null
+    refreshWorkspaceState()
+  } catch (e) { ElMessage.error(readErrorMessage(e, '节点配置无法应用')) }
+}
+const importLegacyRules = () => {
+  if (!workspace || !legacyRuleDraft.value || ruleCanvasActive.value) return
+  try {
+    importRuleDraftToCanvas(workspace, legacyRuleDraft.value)
+    dirty.value = true; legacyRuleDraft.value = undefined; refreshWorkspaceState()
+    ElMessage.success('规则草稿已导入画布，原草稿仍保留，请保存条件模板')
+  } catch (e) { ElMessage.error(readErrorMessage(e, '导入失败')) }
 }
 
 const renderBlockSelection = () => {
@@ -352,11 +408,13 @@ const handleSelectionPointerDown = (event: PointerEvent) => {
 }
 
 const attachWorkspaceSelection = () => {
+  workspaceContainer.value?.addEventListener('dblclick', handleRuleDoubleClick, true)
   workspaceContainer.value?.addEventListener('pointerdown', handleSelectionPointerDown, true)
   workspaceContainer.value?.addEventListener('pointermove', handleCanvasPointerMove, true)
 }
 
 const detachWorkspaceSelection = () => {
+  workspaceContainer.value?.removeEventListener('dblclick', handleRuleDoubleClick, true)
   workspaceContainer.value?.removeEventListener('pointerdown', handleSelectionPointerDown, true)
   workspaceContainer.value?.removeEventListener('pointermove', handleCanvasPointerMove, true)
   window.removeEventListener('pointermove', handleSelectionPointerMove, true)
@@ -388,6 +446,12 @@ const refreshWorkspaceState = () => {
   }
 
   workspaceScale.value = Math.round(workspace.getScale() * 100)
+  const ruleBlocks = workspace.getAllBlocks(false).filter(b => isRuleNode(b.type))
+  ruleCanvasActive.value = ruleBlocks.length > 0
+  updateRuleLabels(workspace, toolboxParams.value, ruleMatch.value)
+  ruleLists.value = ruleBlocks.filter(b => b.type === RULE_LIST).flatMap(b => {
+    try { const node = readRuleNode(b); return node.kind === 'list' ? [node.list] : [] } catch { return [] }
+  })
   hasWorkspaceBlocks.value = workspace.getAllBlocks(false).length > 0
   updateToolbarState()
   renderBlockSelection()
@@ -559,6 +623,33 @@ const getPreviewPlaceholder = (paramType: string) => {
 const isRecordValue = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
 
+const parseRuleContent = (
+  value: TemplateDetail['blocklyJson'],
+  currentTemplateId: string,
+  currentSceneId: string,
+) => {
+  if (!value) return undefined
+  let parsed: unknown = value
+  if (typeof value === 'string') {
+    try { parsed = JSON.parse(value) as unknown } catch { return undefined }
+  }
+  if (
+    isRecordValue(parsed) &&
+    isRecordValue(parsed.ruleTemplate) &&
+    parsed.ruleTemplate.editorType === 'RULE_VERSIONS'
+  ) {
+    parsed = parsed.ruleTemplate
+  } else if (
+    isRecordValue(parsed) &&
+    isRecordValue(parsed.workspace) &&
+    parsed.workspace.editorType === 'RULE_VERSIONS'
+  ) {
+    parsed = parsed.workspace
+  }
+  if (!isRecordValue(parsed) || parsed.editorType !== 'RULE_VERSIONS') return undefined
+  return parseRuleDraft(JSON.stringify(parsed), currentTemplateId, currentSceneId)
+}
+
 const isTemplateNodeLink = (value: unknown): value is TemplateNodeLink => {
   if (typeof value !== 'object' || value === null) {
     return false
@@ -584,7 +675,7 @@ const readTemplateLinks = (state: unknown): TemplateNodeLink[] => {
 }
 
 const isRenderableEntryBlock = (block: Blockly.Block) =>
-  ![
+  !isRuleNode(block.type) && ![
     'scene_param_value',
     'scene_param_ref',
     'loop_item_value',
@@ -1367,6 +1458,17 @@ const handleWorkspaceChange = (event: Blockly.Events.Abstract) => {
   }
 
   handleGroupBlockDrag(event)
+  if (ready.value && !restoringWorkspace && event.type === Blockly.Events.BLOCK_CREATE) {
+    const created = event as Blockly.Events.BlockCreate
+    for (const blockId of created.ids ?? []) {
+      const block = workspace.getBlockById(blockId)
+      if (block?.type !== RULE_VERSION) continue
+      const others = workspace.getAllBlocks(false).filter(b => b.type === RULE_VERSION && b.id !== block.id)
+      if (others.some(b => Number(b.getFieldValue('PRIORITY')) === Number(block.getFieldValue('PRIORITY')))) {
+        block.setFieldValue(Math.max(0, ...others.map(b => Number(b.getFieldValue('PRIORITY')))) + 1, 'PRIORITY')
+      }
+    }
+  }
   refreshWorkspaceState()
 
   if (!ready.value || restoringWorkspace || event.isUiEvent) {
@@ -1381,6 +1483,7 @@ const handleWorkspaceChange = (event: Blockly.Events.Abstract) => {
   ) {
     dirty.value = true
     saveErrors.value = []
+    if (ruleCanvasActive.value) { ruleMatch.value = undefined; previewResult.value = null }
   }
 }
 
@@ -1402,11 +1505,40 @@ const initializeWorkspace = async () => {
   })
 
   let reboundCount = 0
-  const document = parseBlocklyDocument(templateDetail.value?.blocklyJson)
+  const serverRuleDraft = parseRuleContent(
+    templateDetail.value?.blocklyJson,
+    templateId.value,
+    toolboxData.value.sceneId,
+  )
+  let document = serverRuleDraft ? null : parseBlocklyDocument(templateDetail.value?.blocklyJson)
+  ruleCanvasSaved.value = false; ruleDraftProblem.value = ''; legacyRuleDraft.value = undefined
+  try {
+    const raw = localStorage.getItem(`msg-rule-canvas:${templateId.value}`)
+    if (raw) {
+      const value: unknown = JSON.parse(raw)
+      if (!value || typeof value !== 'object') throw new Error('画布草稿格式无效')
+      const local = value as Record<string, unknown>
+      if (local.editorType !== 'RULE_CANVAS' || local.templateId !== templateId.value || local.sceneId !== toolboxData.value.sceneId || local.baseUpdatedAt !== templateDetail.value?.updatedAt) throw new Error('本地草稿与服务器模板版本不一致，未自动恢复，请导出备份后处理')
+      const parsed = parseBlocklyDocument(local)
+      if (!parsed) throw new Error('画布草稿结构无效')
+      document = parsed; ruleCanvasSaved.value = true
+    }
+    try {
+      const legacy = localStorage.getItem(`msg-rule-versions:${templateId.value}`)
+      if (legacy) legacyRuleDraft.value = parseRuleDraft(legacy, templateId.value, toolboxData.value.sceneId)
+    } catch { ElMessage.warning('上一版规则草稿无法导入，原草稿已保留') }
+  } catch (e) { ruleDraftProblem.value = readErrorMessage(e, '本地草稿读取失败') }
   if (document) {
     restoringWorkspace = true
     try {
-      loadTemplateWorkspace(workspace, document.workspace)
+      try { loadTemplateWorkspace(workspace, document.workspace) }
+      catch (e) {
+        if (!ruleCanvasSaved.value) throw e
+        ruleDraftProblem.value = '规则画布草稿加载失败，已恢复服务器内容。请导出原草稿备份。'
+        ruleCanvasSaved.value = false
+        document = parseBlocklyDocument(templateDetail.value?.blocklyJson) ?? { schemaVersion: 1, workspace: {} }
+        loadTemplateWorkspace(workspace, document.workspace)
+      }
       connectionOverlay.setLinks(
         rewriteMathOperandPrefixLinks(readTemplateLinks(document.workspace)),
       )
@@ -1416,10 +1548,14 @@ const initializeWorkspace = async () => {
     } finally {
       restoringWorkspace = false
     }
+  } else if (serverRuleDraft) {
+    restoringWorkspace = true
+    try { importRuleDraftToCanvas(workspace, serverRuleDraft) }
+    finally { restoringWorkspace = false }
+    connectionOverlay.setLinks([])
   } else {
     connectionOverlay.setLinks([])
   }
-
   refreshWorkspaceState()
   resizeWorkspace()
   attachResizeObserver()
@@ -1465,7 +1601,7 @@ const loadEditor = async () => {
     }
 
     ready.value = true
-    dirty.value = reboundCount > 0
+    dirty.value = reboundCount > 0 || ruleCanvasSaved.value
     if (reboundCount > 0) {
       ElMessage.info(`已自动关联 ${reboundCount} 个当前场景参数，请保存更新`)
     }
@@ -1506,6 +1642,8 @@ const formatContentValidationErrors = (errors?: string[]) => {
   const paramLabels = getSceneParamLabels()
 
   return [...new Set(rawErrors.map((error) => {
+    const friendlyError = getFriendlyBusinessMessage(error)
+    if (friendlyError !== error) return friendlyError
     if (!error.includes('scene_param_value') && !error.includes('scene_param_ref')) {
       return error
     }
@@ -1519,6 +1657,66 @@ const formatContentValidationErrors = (errors?: string[]) => {
   }))]
 }
 
+const formatRuleTrace = (trace: RuleTemplatePreview['trace'], draft: RuleTemplateDraft) =>
+  trace.map((item) => ({
+    ...item,
+    reasons: item.reasons.map((reason) => {
+      const matched = reason.match(/^versions\[([^\]]+)]\.rules\[([^\]]+)]\s*[:：]\s*(.+)$/i)
+      if (!matched) return reason
+      const version = draft.versions.find((entry) => entry.id === matched[1])
+      const rule = version?.condition.rules.find((entry) => entry.id === matched[2])
+      if (!rule) return matched[3] || reason
+      return `${ruleSummary(rule, toolboxParams.value)}：${matched[3]}`
+    }),
+  }))
+
+const normalizeRuleGroup = (group: TemplateRuleGroup): TemplateRuleGroup => ({
+  ...group,
+  rules: group.rules.map((rule) => ({
+    ...rule,
+    right: rule.right.source === 'literal'
+      ? { ...rule.right, reference: { ...rule.left } }
+      : rule.right,
+    calculations: rule.calculations?.map((step) => ({
+      ...step,
+      currentSide: step.currentSide ?? 'left',
+      right: step.right.source === 'literal'
+        ? { ...step.right, reference: { source: 'param', key: rule.left.key, type: 'NUMBER' } }
+        : step.right,
+    })),
+  })),
+})
+
+const normalizeRuleContent = <T extends { bindings: RuleTemplateDraft['fallback']['content']['bindings'] }>(content: T): T => ({
+  ...content,
+  bindings: content.bindings.map((binding) => ({
+    ...binding,
+    datePattern: binding.datePattern || DEFAULT_DATE_PATTERN,
+    calculations: binding.calculations?.map((step) => ({
+      ...step,
+      currentSide: step.currentSide ?? 'left',
+      right: step.right.source === 'literal'
+        ? { ...step.right, reference: { source: binding.source === 'field' ? 'field' : 'param', key: binding.key, type: 'NUMBER' } }
+        : step.right,
+    })),
+  })),
+})
+
+const normalizeRuleDraft = (draft: RuleTemplateDraft): RuleTemplateDraft => ({
+  ...draft,
+  versions: draft.versions.map((version) => ({
+    ...version,
+    condition: normalizeRuleGroup(version.condition),
+    content: normalizeRuleContent(version.content),
+  })),
+  fallback: { ...draft.fallback, content: normalizeRuleContent(draft.fallback.content) },
+  lists: draft.lists.map((list) => ({
+    ...list,
+    filter: normalizeRuleGroup(list.filter),
+    content: normalizeRuleContent(list.content),
+  })),
+})
+
 const saveContent = async () => {
   if (!workspace || !ready.value || saving.value || !templateId.value) {
     return
@@ -1528,6 +1726,41 @@ const saveContent = async () => {
   saveErrors.value = []
 
   try {
+    if (ruleCanvasActive.value) {
+      if (ruleDraftProblem.value) throw new Error('请先导出并处理原画布草稿，避免覆盖')
+      const draft = normalizeRuleDraft({
+        ...collectRuleDraft(workspace, templateId.value, toolboxData.value?.sceneId || ''),
+        templateId: templateId.value,
+        sceneId: toolboxData.value?.sceneId || '',
+      })
+      const issues = validateDraft(draft, toolboxParams.value)
+      if (issues.length) { saveErrors.value = issues; ElMessage.warning(issues[0]); return }
+      const form: TemplateContentSaveForm = {
+        ...draft,
+        workspace: { ...draft, ruleTemplate: draft },
+        ruleTemplate: draft,
+      }
+      const result = await saveTemplateContent(templateId.value, form)
+      if (result.valid !== true) {
+        dirty.value = true
+        saveErrors.value = formatContentValidationErrors(result.errors)
+        if (!saveErrors.value.length) saveErrors.value = ['条件模板校验未通过']
+        ElMessage.error(saveErrors.value[0])
+        return
+      }
+      if (templateDetail.value) {
+        templateDetail.value.blocklyJson = result.blocklyJson ?? form
+        templateDetail.value.hasContent = result.hasContent ?? true
+        templateDetail.value.updatedAt = result.updatedAt ?? templateDetail.value.updatedAt
+        templateDetail.value.status = result.status ?? (templateDetail.value.status === 1 ? 0 : templateDetail.value.status)
+      }
+      try { localStorage.removeItem(`msg-rule-canvas:${templateId.value}`) }
+      catch { ElMessage.warning('服务器已保存，本地旧草稿未能清除') }
+      ruleCanvasSaved.value = false
+      dirty.value = false
+      ElMessage.success('条件模板保存成功')
+      return
+    }
     if (toolboxData.value) {
       rebindSceneParamBlocks(workspace, toolboxData.value)
       const paramErrors = validateSceneParamBlocks(workspace, toolboxData.value)
@@ -1571,24 +1804,68 @@ const saveContent = async () => {
     }
 
     dirty.value = false
+    if (ruleCanvasSaved.value) {
+      try { localStorage.removeItem(`msg-rule-canvas:${templateId.value}`); ruleCanvasSaved.value = false }
+      catch { ElMessage.warning('服务器已保存，本地旧草稿未能清除') }
+    }
     ElMessage.success(isSavedEmptyWorkspace ? '模板内容已清空' : '模板内容保存成功')
   } catch (error) {
     const message = readErrorMessage(error, '模板内容保存失败，请稍后重试。')
     dirty.value = true
     saveErrors.value = [message]
-    ElMessage.error(message)
   } finally {
     saving.value = false
   }
 }
 
 const runPreview = async () => {
-  if (!workspace || !ready.value || !templateId.value || !toolboxData.value) {
+  if (!workspace || !ready.value || previewing.value || !templateId.value || !toolboxData.value) {
     return
   }
 
   previewing.value = true
   try {
+    if (ruleCanvasActive.value) {
+      ruleMatch.value = undefined; previewResult.value = null; saveErrors.value = []
+      const draft = normalizeRuleDraft({
+        ...collectRuleDraft(workspace, templateId.value, toolboxData.value.sceneId),
+        templateId: templateId.value,
+        sceneId: toolboxData.value.sceneId,
+      })
+      const issues = validateDraft(draft, toolboxParams.value)
+      if (issues.length) {
+        saveErrors.value = issues
+        ElMessage.error(issues[0])
+        return
+      }
+      const values: Record<string, TemplatePreviewValue> = {}
+      for (const param of toolboxParams.value) {
+        const inputValue = previewValues[param.paramName]
+        if (isEmptyPreviewValue(inputValue)) continue
+        const value = getPreviewValue(param.paramName, param.paramType)
+        if (value === null) return
+        values[param.paramName] = value
+      }
+      const response = await previewTemplate({
+        ...draft,
+        workspace: { ...draft, ruleTemplate: draft },
+        ruleTemplate: draft,
+        values,
+      })
+      const content = response.content ?? response.renderedContent ?? ''
+      const matched: RuleTemplatePreview = {
+        matchedId: response.matchedId ?? '',
+        matchedName: response.matchedName ?? '',
+        content,
+        trace: formatRuleTrace(response.trace ?? [], draft),
+        errors: formatContentValidationErrors(response.errors),
+      }
+      ruleMatch.value = matched
+      if (matched.errors.length) { saveErrors.value = matched.errors; ElMessage.error(matched.errors[0]); return }
+      previewResult.value = { ...response, templateId: response.templateId ?? templateId.value, channelType: response.channelType ?? templateDetail.value?.channelType ?? '', renderedContent: content, usedParams: response.usedParams ?? [], warnings: response.warnings ?? [] }
+      setSelectedBlockIds([workspace.getAllBlocks(false).find(b => b.type === RULE_GROUP)?.id ?? matched.matchedId])
+      return
+    }
     rebindSceneParamBlocks(workspace, toolboxData.value)
     const paramErrors = validateSceneParamBlocks(workspace, toolboxData.value)
     if (paramErrors.length > 0) {
@@ -1629,7 +1906,8 @@ const runPreview = async () => {
       workspace: saveWorkspaceWithLinks(),
       values,
     })
-  } catch {
+  } catch (error) {
+    if (ruleCanvasActive.value) saveErrors.value = [readErrorMessage(error, '规则预览失败')]
     // 请求拦截器已统一弹出错误提示，避免同一错误重复弹窗。
   } finally {
     previewing.value = false
@@ -1664,6 +1942,28 @@ const createToolboxBlock = (
   if (!workspace || !workspaceContainer.value) {
     return
   }
+  if (state.type === RULE_GROUP) {
+    const existing = workspace.getAllBlocks(false).find(b => b.type === RULE_GROUP)
+    if (existing) { openRuleNode(existing); return }
+    const legacy = workspace.getAllBlocks(false).filter(b => b.type === RULE_VERSION || b.type === RULE_FALLBACK)
+    if (legacy.length) {
+      try {
+        const draft = collectRuleDraft(workspace, templateId.value, toolboxData.value?.sceneId ?? '')
+        Blockly.Events.setGroup(true)
+        try {
+          const block = Blockly.serialization.blocks.append({ type: RULE_GROUP, x: 60, y: 60, fields: { RULE_DATA: JSON.stringify({ kind: 'group', group: { name: '条件模板', versions: draft.versions, fallback: draft.fallback } }) } }, workspace, { recordUndo: true })
+          legacy.forEach(b => b.dispose(false))
+          refreshWorkspaceState(); openRuleNode(block)
+        } finally { Blockly.Events.setGroup(false) }
+      } catch (error) { ElMessage.error(error instanceof Error ? error.message : '合并失败') }
+      return
+    }
+  }
+  if (state.type === RULE_FALLBACK) {
+    const existing = workspace.getAllBlocks(false).find(b => b.type === RULE_FALLBACK)
+    if (existing) { openRuleNode(existing); return }
+  }
+  const priority = Math.max(0, ...workspace.getAllBlocks(false).filter(b => b.type === RULE_VERSION).map(b => Number(b.getFieldValue('PRIORITY')))) + 1
 
   const containerRect = workspaceContainer.value.getBoundingClientRect()
   const screenCoordinate = new Blockly.utils.Coordinate(
@@ -1675,16 +1975,21 @@ const createToolboxBlock = (
     screenCoordinate,
   )
 
-  Blockly.serialization.blocks.append(
+  const added = Blockly.serialization.blocks.append(
     {
       ...state,
+      ...(state.type === RULE_VERSION ? { fields: { ...state.fields, PRIORITY: String(priority) } } : {}),
       x: workspaceCoordinate.x,
       y: workspaceCoordinate.y,
     },
     workspace,
     { recordUndo: true },
   )
+  if (state.type === RULE_VERSION && !workspace.getAllBlocks(false).some(b => b.type === RULE_FALLBACK)) {
+    Blockly.serialization.blocks.append({ type: RULE_FALLBACK, x: workspaceCoordinate.x, y: workspaceCoordinate.y + 180 }, workspace, { recordUndo: true })
+  }
   refreshWorkspaceState()
+  if (isRuleNode(state.type)) openRuleNode(added)
 }
 
 const handleWorkspaceDrop = (event: DragEvent) => {
@@ -1897,8 +2202,9 @@ const loadReference = async (detail: TemplateReferenceDetail) => {
     return
   }
 
-  const document = parseBlocklyDocument(detail.blocklyJson)
-  if (!document) {
+  const ruleDraft = parseRuleContent(detail.blocklyJson, detail.templateId, detail.sceneId)
+  const document = ruleDraft ? null : parseBlocklyDocument(detail.blocklyJson)
+  if (!document && !ruleDraft) {
     ElMessage.warning('参考模板暂无可用内容')
     return
   }
@@ -1917,13 +2223,22 @@ const loadReference = async (detail: TemplateReferenceDetail) => {
 
   restoringWorkspace = true
   try {
-    loadTemplateWorkspace(workspace, document.workspace)
-    connectionOverlay?.setLinks(
-      rewriteMathOperandPrefixLinks(readTemplateLinks(document.workspace)),
-    )
-    const reboundCount = rebindSceneParamBlocks(workspace, toolboxData.value)
-    syncSceneParamBlockLabels(workspace, toolboxData.value)
-    const paramErrors = validateSceneParamBlocks(workspace, toolboxData.value)
+    workspace.clear()
+    let reboundCount = 0
+    if (ruleDraft) {
+      importRuleDraftToCanvas(workspace, ruleDraft)
+      connectionOverlay?.setLinks([])
+    } else if (document) {
+      loadTemplateWorkspace(workspace, document.workspace)
+      connectionOverlay?.setLinks(
+        rewriteMathOperandPrefixLinks(readTemplateLinks(document.workspace)),
+      )
+      reboundCount = rebindSceneParamBlocks(workspace, toolboxData.value)
+      syncSceneParamBlockLabels(workspace, toolboxData.value)
+    }
+    const paramErrors = ruleDraft
+      ? validateDraft(collectRuleDraft(workspace, templateId.value, toolboxData.value.sceneId), toolboxParams.value)
+      : validateSceneParamBlocks(workspace, toolboxData.value)
     dirty.value = true
     saveErrors.value = paramErrors
     referenceDialogVisible.value = false
@@ -1975,6 +2290,7 @@ const returnToList = () => {
 }
 
 const handleShortcut = (event: KeyboardEvent) => {
+  if (ruleNodeVisible.value) return
   const key = event.key.toLowerCase()
   const hasModifier = event.ctrlKey || event.metaKey
   const consumeShortcut = () => {
@@ -2042,10 +2358,15 @@ onBeforeUnmount(() => {
   disposeCurrentWorkspace()
 })
 
+watch(ruleMatch, () => { if (workspace) updateRuleLabels(workspace, toolboxParams.value, ruleMatch.value) })
+
 watch(previewExpanded, async () => {
   await nextTick()
   resizeWorkspace()
 })
+watch(previewValues, () => {
+  if (ruleCanvasActive.value) { ruleMatch.value = undefined; previewResult.value = null }
+}, { deep: true })
 </script>
 
 <template>
@@ -2085,6 +2406,8 @@ watch(previewExpanded, async () => {
           </el-button>
         </div>
       </header>
+
+      <el-alert v-if="legacyRuleDraft && !ruleCanvasActive" title="发现上一版规则模板草稿，可以导入当前画布继续编辑。" type="info" :closable="false"><el-button link type="primary" @click="importLegacyRules">导入已有规则草稿</el-button></el-alert>
 
       <el-alert
         v-if="loadFailed"
@@ -2211,7 +2534,9 @@ watch(previewExpanded, async () => {
                 执行预览
               </el-button>
 
+              <el-alert v-if="saveErrors.length" title="预览未完成，请检查以下内容" type="error" :closable="false"><ul><li v-for="(error, index) in saveErrors" :key="index">{{ error }}</li></ul></el-alert>
               <div class="template-editor-page__preview-result">
+                <strong v-if="ruleMatch?.matchedName">命中模板：{{ ruleMatch.matchedName }}</strong>
                 <span>渲染结果：</span>
                 <p>{{ previewResult?.renderedContent || '暂无预览结果' }}</p>
               </div>
@@ -2226,6 +2551,8 @@ watch(previewExpanded, async () => {
       :template-id="templateId"
       @load="loadReference"
     />
+    <TemplateRuleGroupDialog v-if="ruleNodeVisible && ruleNodeInitial?.kind === 'group'" :key="ruleNodeId" v-model="ruleNodeVisible" :initial="ruleNodeInitial" :params="toolboxParams" :lists="ruleLists" :preview="ruleMatch" @apply="applyRuleNode" />
+    <TemplateRuleNodeDialog v-if="ruleNodeVisible && ruleNodeInitial && ruleNodeInitial.kind !== 'group'" :key="ruleNodeId" v-model="ruleNodeVisible" :initial="ruleNodeInitial" :priority="ruleNodePriority" :params="toolboxParams" :lists="ruleLists" @apply="applyRuleNode" />
   </section>
 </template>
 

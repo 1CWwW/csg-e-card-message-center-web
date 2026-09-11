@@ -1,4 +1,5 @@
 import * as Blockly from 'blockly'
+import { isRuleNode } from './ruleCanvas'
 
 const SVG_NS = 'http://www.w3.org/2000/svg'
 
@@ -56,6 +57,7 @@ const getBlockPoint = (block: Blockly.BlockSvg, side: PortSide, ratio = 0.5) => 
 }
 
 const getBlockPorts = (block: Blockly.BlockSvg): TemplateNodePort[] => {
+  if (isRuleNode(block.type)) return []
   if (block.type === 'text') {
     return [
       {
