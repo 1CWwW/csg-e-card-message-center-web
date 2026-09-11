@@ -55,7 +55,32 @@ const isCommonResult = (value: unknown): value is CommonResult<unknown> => {
 const technicalMessagePattern =
   /后端|前端|服务器|服务状态|数据库|接口|请求失败|网络异常|network error|timeout|exception|stack|sql|http/i
 
-const getFriendlyBusinessMessage = (message: string | undefined) => {
+export const getFriendlyBusinessMessage = (message: string | undefined) => {
+  const value = message?.trim() ?? ''
+  if (/workspace\.ruleTemplate.*完全一致/i.test(value)) {
+    return '画布中的条件规则与当前执行规则不一致，请重新应用条件模板后再试'
+  }
+  if (/场景参数\s*ID\s*无效/i.test(value)) {
+    return '条件中引用的场景参数已失效，请重新选择参数'
+  }
+  if (/ruleTemplate\.templateId.*当前模板不一致/i.test(value)) {
+    return '当前规则内容不属于正在编辑的模板，请刷新页面后重新操作'
+  }
+  if (/ruleTemplate\.sceneId.*当前.*场景不一致/i.test(value)) {
+    return '当前规则内容与模板场景不一致，请刷新页面后重新配置条件'
+  }
+  if (/message_content.*根节点/i.test(value)) {
+    return '当前内容被识别成旧版模板，请刷新页面后重新保存'
+  }
+  if (/workspace.*不能为空/i.test(value)) {
+    return '模板内容为空，请重新编辑后再保存'
+  }
+  if (/ruleTemplate/i.test(value)) {
+    return '条件模板配置不正确，请检查分支条件和消息正文'
+  }
+  if (/workspace/i.test(value)) {
+    return '画布内容校验未通过，请重新打开模板后再试'
+  }
   if (!message || technicalMessagePattern.test(message)) {
     return '操作未完成，请稍后重试'
   }

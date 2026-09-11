@@ -1,5 +1,6 @@
 import type { SceneParamItem } from './scene-param'
 import type { FilterOption } from './api'
+import type { RuleMatchTrace, RuleTemplateDraft } from './template-rule'
 
 export type TemplateStatus = 0 | 1
 export type TemplateQueryStatus = '0' | '1'
@@ -11,7 +12,12 @@ export interface TemplateBlocklyDocument {
   workspace: BlocklyWorkspaceState
 }
 
-export type BlocklyJson = TemplateBlocklyDocument | Record<string, unknown>
+export interface TemplateRuleDocument {
+  schemaVersion: number
+  workspace: RuleTemplateDraft & { ruleTemplate: RuleTemplateDraft }
+}
+
+export type BlocklyJson = TemplateBlocklyDocument | TemplateRuleDocument | RuleTemplateDraft | Record<string, unknown>
 
 export interface TemplateListItem {
   id?: string
@@ -52,10 +58,12 @@ export interface TemplateToolboxData {
   params: TemplateToolboxParam[]
 }
 
-export interface TemplateContentSaveForm {
-  schemaVersion: 1
-  workspace: BlocklyWorkspaceState
-}
+export type TemplateContentSaveForm =
+  | { schemaVersion: 1; workspace: BlocklyWorkspaceState }
+  | (RuleTemplateDraft & {
+    workspace: RuleTemplateDraft & { ruleTemplate: RuleTemplateDraft }
+    ruleTemplate: RuleTemplateDraft
+  })
 
 export interface TemplateContentSaveResult {
   templateId?: string
@@ -64,6 +72,7 @@ export interface TemplateContentSaveResult {
   valid: boolean
   errors?: string[]
   updatedAt?: string
+  status?: TemplateStatus
 }
 
 export interface TemplateReferenceItem {
@@ -93,12 +102,16 @@ export type TemplatePreviewValue =
   | number[]
   | TemplatePreviewObject[]
 
-export interface TemplatePreviewForm {
+export type TemplatePreviewForm = {
   templateId: string
   schemaVersion: 1
   workspace: BlocklyWorkspaceState
   values: Record<string, TemplatePreviewValue>
-}
+} | (RuleTemplateDraft & {
+  workspace: RuleTemplateDraft & { ruleTemplate: RuleTemplateDraft }
+  ruleTemplate: RuleTemplateDraft
+  values: Record<string, TemplatePreviewValue>
+})
 
 export interface TemplatePreviewResult {
   templateId: string
@@ -106,6 +119,11 @@ export interface TemplatePreviewResult {
   renderedContent: string
   usedParams: string[]
   warnings: string[]
+  matchedId?: string
+  matchedName?: string
+  content?: string
+  trace?: RuleMatchTrace[]
+  errors?: string[]
 }
 
 export interface TemplateQuery {

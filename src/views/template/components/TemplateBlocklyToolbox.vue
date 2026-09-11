@@ -67,6 +67,14 @@ const sortedParams = computed(() =>
 
 const groups = computed<ToolboxGroup[]>(() => [
   {
+    key: 'rule-templates',
+    title: '前置条件模板',
+    items: [
+      { key: 'rule_template_group', label: '条件模板', tag: '多分支集中设置', colour: '#5364c7', tagClass: 'is-text', state: { type: 'rule_template_group' } },
+      { key: 'rule_template_list', label: '列表内容', tag: '独立筛选与格式', colour: '#8457e8', tagClass: 'is-loop', state: { type: 'rule_template_list' } },
+    ],
+  },
+  {
     key: 'params',
     title: '场景参数',
     items: sortedParams.value.map((param) => {
