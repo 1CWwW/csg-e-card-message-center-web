@@ -1,6 +1,13 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { Message, Search, Timer } from '@element-plus/icons-vue'
+import { useRouter } from 'vue-router'
+import { Message, Search, Setting, Timer } from '@element-plus/icons-vue'
+
+const router = useRouter()
+
+const openDoNotDisturb = () => {
+  router.push({ name: 'DoNotDisturb' })
+}
 
 const requestFields = [
   {
@@ -111,7 +118,10 @@ const syncResponseExample = computed(() =>
         <h1>消息推送接口</h1>
         <p>面向南网e卡各业务模块的统一消息推送API文档</p>
       </div>
-      <span class="api-version">API Version 2.0</span>
+      <div class="push-page__actions">
+        <el-button :icon="Setting" @click="openDoNotDisturb">免打扰设置</el-button>
+        <span class="api-version">API Version 2.0</span>
+      </div>
     </header>
 
     <section class="endpoint-grid">
@@ -239,6 +249,12 @@ const syncResponseExample = computed(() =>
   color: #3b82f6;
   font-size: 12px;
   font-weight: 600;
+}
+
+.push-page__actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
 
 .endpoint-grid {

@@ -22,15 +22,17 @@ const props = withDefaults(defineProps<{
   active?: boolean
   contextKey?: string
   dropdownBelow?: boolean
+  selectAllMode?: 'collect' | 'emit'
 }>(), {
   modelValue: '', data: () => [], multiple: false, loading: false, disabled: false,
   placeholder: '请选择单位', collapseTags: true, collapseTagsTooltip: false,
-  lazyLoad: true, active: true, contextKey: '', dropdownBelow: false,
+  lazyLoad: true, active: true, contextKey: '', dropdownBelow: false, selectAllMode: 'collect',
 })
 const emit = defineEmits<{
   'update:modelValue': [value: string | string[]]
   'visible-change': [visible: boolean]
   'selection-blocked': [blocked: boolean]
+  'select-all': []
 }>()
 
 interface LazyTreeNode {
@@ -209,6 +211,10 @@ const handleRemoteSearch = (value: string) => {
 
 const runSelection = async (task: UnitSelectionTask) => {
   if (selectionLoading.value || props.disabled || !props.active) return
+  if (task.kind === 'all' && props.selectAllMode === 'emit') {
+    emit('select-all')
+    return
+  }
   const version = ++selectionVersion
   retryTask = task
   selectionError.value = ''

@@ -62,6 +62,15 @@ const routes: RouteRecordRaw[] = [
         },
       },
       {
+        path: 'push/do-not-disturb',
+        name: 'DoNotDisturb',
+        component: () => import('../views/push/DoNotDisturbView.vue'),
+        meta: {
+          title: '消息免打扰设置',
+          description: '管理消息免打扰规则',
+        },
+      },
+      {
         path: 'record',
         name: 'Record',
         component: () => import('../views/record/RecordView.vue'),
