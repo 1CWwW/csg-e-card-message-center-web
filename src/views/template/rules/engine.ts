@@ -9,7 +9,7 @@ export const reference = (): RuleReference => ({ source: 'param', key: '', type:
 const numberReference = (): RuleReference => ({ source: 'param', key: '', type: 'NUMBER' })
 export const createRule = (): TemplateRule => ({ id: id(), left: reference(), operator: 'eq', right: { source: 'literal', value: '', reference: reference() }, negate: false, calculations: [] })
 export const createCalculation = (): RuleCalculation => ({ id: id(), operator: 'add', currentSide: 'left', right: { source: 'literal', value: '0', reference: numberReference() } })
-export const createDraft = (templateId: string, sceneId: string): RuleTemplateDraft => ({ editorType: 'RULE_VERSIONS', schemaVersion: 1, templateId, sceneId, versions: [], fallback: { id: id(), name: '默认模板', content: emptyContent() }, lists: [] })
+export const createDraft = (templateId: string, sceneId: string): RuleTemplateDraft => ({ editorType: 'RULE_VERSIONS', schemaVersion: 1, templateId, sceneId, versions: [], fallback: { id: id(), name: '默认模板', action: 'SEND', content: emptyContent() }, lists: [] })
 export const typeLabels: Record<RuleValueType, string> = { STRING: '文本', NUMBER: '数值', BOOLEAN: '布尔', TIME: '时间', STRING_ARRAY: '文本数组', NUMBER_ARRAY: '数值数组', OBJECT_ARRAY: '对象数组' }
 export const operatorLabels: Record<RuleOperator, string> = { eq: '等于', ne: '不等于', gt: '大于 / 晚于', gte: '大于等于', lt: '小于 / 早于', lte: '小于等于', contains: '包含', like: '模式匹配', empty: '为空', notEmpty: '不为空' }
 export const mathOperatorLabels: Record<RuleMathOperator, string> = { add: '加', subtract: '减', multiply: '乘', divide: '除', modulo: '取余' }
@@ -63,8 +63,10 @@ export function parseRuleDraft(raw: string, templateId: string, sceneId: string)
   const calculation = (c: unknown): boolean => record(c) && typeof c.id === 'string' && Object.hasOwn(mathOperatorLabels, String(c.operator)) && (c.currentSide === undefined || ['left', 'right'].includes(String(c.currentSide))) && value(c.right)
   const group = (g: unknown): boolean => record(g) && ['all', 'any'].includes(String(g.mode)) && Array.isArray(g.rules) && g.rules.length <= 100 && g.rules.every(r => record(r) && typeof r.id === 'string' && ref(r.left) && Object.hasOwn(operatorLabels, String(r.operator)) && value(r.right) && (r.negate === undefined || typeof r.negate === 'boolean') && (r.calculations === undefined || Array.isArray(r.calculations) && r.calculations.length <= 10 && r.calculations.every(calculation)))
   const content = (c: unknown): boolean => record(c) && typeof c.text === 'string' && c.text.length <= 50000 && Array.isArray(c.bindings) && c.bindings.length <= 200 && c.bindings.every(b => record(b) && typeof b.token === 'string' && typeof b.key === 'string' && typeof b.fallback === 'string' && ['param', 'field', 'list'].includes(String(b.source)) && Object.hasOwn(typeLabels, String(b.type)) && ['plain', 'money', 'date'].includes(String(b.format)) && Number.isInteger(b.decimals) && Number(b.decimals) >= 0 && Number(b.decimals) <= 8 && (b.datePattern === undefined || typeof b.datePattern === 'string' && b.datePattern.length <= 50) && (b.calculations === undefined || Array.isArray(b.calculations) && b.calculations.length <= 10 && b.calculations.every(calculation)))
-  if (!record(data) || data.editorType !== 'RULE_VERSIONS' || data.schemaVersion !== 1 || data.templateId !== templateId || data.sceneId !== sceneId || !record(data.fallback) || typeof data.fallback.id !== 'string' || typeof data.fallback.name !== 'string' || !content(data.fallback.content) || !Array.isArray(data.versions) || data.versions.length > 100 || !data.versions.every(v => record(v) && typeof v.id === 'string' && typeof v.name === 'string' && group(v.condition) && content(v.content)) || !Array.isArray(data.lists) || data.lists.length > 100 || !data.lists.every(l => record(l) && ['id', 'name', 'paramId', 'separator', 'prefix', 'suffix'].every(k => typeof l[k] === 'string') && group(l.filter) && content(l.content))) throw new Error('草稿格式无效，或所属模板、场景不匹配')
-  return data as unknown as RuleTemplateDraft
+  if (!record(data) || data.editorType !== 'RULE_VERSIONS' || data.schemaVersion !== 1 || data.templateId !== templateId || data.sceneId !== sceneId || !record(data.fallback) || typeof data.fallback.id !== 'string' || typeof data.fallback.name !== 'string' || (data.fallback.action !== undefined && !['SEND', 'SKIP'].includes(String(data.fallback.action))) || !content(data.fallback.content) || !Array.isArray(data.versions) || data.versions.length > 100 || !data.versions.every(v => record(v) && typeof v.id === 'string' && typeof v.name === 'string' && group(v.condition) && content(v.content)) || !Array.isArray(data.lists) || data.lists.length > 100 || !data.lists.every(l => record(l) && ['id', 'name', 'paramId', 'separator', 'prefix', 'suffix'].every(k => typeof l[k] === 'string') && group(l.filter) && content(l.content))) throw new Error('草稿格式无效，或所属模板、场景不匹配')
+  const draft = data as unknown as RuleTemplateDraft
+  draft.fallback.action ??= 'SEND'
+  return draft
 }
 
 export function validateDraft(draft: RuleTemplateDraft, params: TemplateToolboxParam[]): string[] {
@@ -135,7 +137,8 @@ export function validateDraft(draft: RuleTemplateDraft, params: TemplateToolboxP
   if (new Set(ids).size !== ids.length) errors.push('版本或列表标识重复')
   for (const v of draft.versions) { if (!v.name.trim()) errors.push('请填写版本名称'); checkGroup(v.condition, false, true); checkContent(v.content, false) }
   if (!draft.fallback.name.trim()) errors.push('请填写默认版本名称')
-  checkContent(draft.fallback.content, false)
+  if (draft.fallback.action !== undefined && !['SEND', 'SKIP'].includes(draft.fallback.action)) errors.push('请选择未命中时的处理方式')
+  if (draft.fallback.action !== 'SKIP') checkContent(draft.fallback.content, false)
   for (const l of draft.lists) {
     if (!l.name.trim()) errors.push('请填写列表名称')
     if (!params.find(p => p.paramId === l.paramId)?.paramType.endsWith('_ARRAY')) errors.push(`列表“${l.name}”请选择数组参数`)
@@ -145,7 +148,7 @@ export function validateDraft(draft: RuleTemplateDraft, params: TemplateToolboxP
 }
 
 export function previewDraft(draft: RuleTemplateDraft, params: TemplateToolboxParam[], values: Record<string, unknown>): RuleTemplatePreview {
-  const result: RuleTemplatePreview = { matchedId: '', matchedName: '', content: '', trace: [], errors: validateDraft(draft, params) }
+  const result: RuleTemplatePreview = { matchedId: '', matchedName: '', content: '', skipSend: false, trace: [], errors: validateDraft(draft, params) }
   if (result.errors.length) return result
   try {
     for (const p of params) {
@@ -232,7 +235,8 @@ export function previewDraft(draft: RuleTemplateDraft, params: TemplateToolboxPa
       result.trace.push({ id: version.id, name: version.name, state: evaluated.matched ? 'matched' : 'unmatched', reasons: evaluated.reasons })
       if (evaluated.matched) { found = true; chosen = version }
     }
-    result.trace.push({ id: draft.fallback.id, name: draft.fallback.name, state: found ? 'skipped' : 'matched', reasons: [found ? '已命中条件版本，无需使用默认模板' : '所有前置条件未命中，使用默认模板'] })
+    const skipSend = !found && draft.fallback.action === 'SKIP'
+    result.trace.push({ id: draft.fallback.id, name: draft.fallback.name, state: found ? 'skipped' : 'matched', reasons: [found ? '已命中条件版本，无需使用默认模板' : skipSend ? '所有前置条件均未命中，本次不发送' : '所有前置条件未命中，使用默认模板'] })
     const cache = new Map<string, string>()
     const render = (content: RuleMessageContent, item?: unknown): string => content.text.replace(/{{([^{}]+)}}/g, (_, token: string) => {
       const b = content.bindings.find(b => b.token === token)!
@@ -265,8 +269,9 @@ export function previewDraft(draft: RuleTemplateDraft, params: TemplateToolboxPa
       }
       return String(value)
     })
-    result.content = render(chosen.content)
     result.matchedId = chosen.id; result.matchedName = chosen.name
+    if (skipSend) { result.skipSend = true; return result }
+    result.content = render(chosen.content)
   } catch (e) { result.content = ''; result.errors.push(e instanceof Error ? e.message : '预览失败') }
   return result
 }

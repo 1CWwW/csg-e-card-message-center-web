@@ -1709,7 +1709,7 @@ const normalizeRuleDraft = (draft: RuleTemplateDraft): RuleTemplateDraft => ({
     condition: normalizeRuleGroup(version.condition),
     content: normalizeRuleContent(version.content),
   })),
-  fallback: { ...draft.fallback, content: normalizeRuleContent(draft.fallback.content) },
+  fallback: { ...draft.fallback, action: draft.fallback.action ?? 'SEND', content: normalizeRuleContent(draft.fallback.content) },
   lists: draft.lists.map((list) => ({
     ...list,
     filter: normalizeRuleGroup(list.filter),
@@ -1853,16 +1853,18 @@ const runPreview = async () => {
         values,
       })
       const content = response.content ?? response.renderedContent ?? ''
+      const skipSend = response.skipSend ?? (draft.fallback.action === 'SKIP' && response.matchedId === draft.fallback.id)
       const matched: RuleTemplatePreview = {
         matchedId: response.matchedId ?? '',
         matchedName: response.matchedName ?? '',
         content,
+        skipSend,
         trace: formatRuleTrace(response.trace ?? [], draft),
         errors: formatContentValidationErrors(response.errors),
       }
       ruleMatch.value = matched
       if (matched.errors.length) { saveErrors.value = matched.errors; ElMessage.error(matched.errors[0]); return }
-      previewResult.value = { ...response, templateId: response.templateId ?? templateId.value, channelType: response.channelType ?? templateDetail.value?.channelType ?? '', renderedContent: content, usedParams: response.usedParams ?? [], warnings: response.warnings ?? [] }
+      previewResult.value = { ...response, templateId: response.templateId ?? templateId.value, channelType: response.channelType ?? templateDetail.value?.channelType ?? '', renderedContent: content, skipSend, usedParams: response.usedParams ?? [], warnings: response.warnings ?? [] }
       setSelectedBlockIds([workspace.getAllBlocks(false).find(b => b.type === RULE_GROUP)?.id ?? matched.matchedId])
       return
     }
@@ -2536,9 +2538,10 @@ watch(previewValues, () => {
 
               <el-alert v-if="saveErrors.length" title="预览未完成，请检查以下内容" type="error" :closable="false"><ul><li v-for="(error, index) in saveErrors" :key="index">{{ error }}</li></ul></el-alert>
               <div class="template-editor-page__preview-result">
-                <strong v-if="ruleMatch?.matchedName">命中模板：{{ ruleMatch.matchedName }}</strong>
-                <span>渲染结果：</span>
-                <p>{{ previewResult?.renderedContent || '暂无预览结果' }}</p>
+                <strong v-if="ruleMatch?.skipSend">本次结果：不发送</strong>
+                <strong v-else-if="ruleMatch?.matchedName">命中模板：{{ ruleMatch.matchedName }}</strong>
+                <span>{{ ruleMatch?.skipSend ? '处理结果：' : '渲染结果：' }}</span>
+                <p>{{ ruleMatch?.skipSend ? '所有条件分支均未命中，已按默认设置跳过发送。' : previewResult?.renderedContent || '暂无预览结果' }}</p>
               </div>
             </div>
           </section>

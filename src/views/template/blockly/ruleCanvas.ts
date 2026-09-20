@@ -12,7 +12,7 @@ export const newRuleNode = (type: string, id: string): CanvasRuleNode => {
   if (type === RULE_GROUP) return { kind: 'group', group: { name: '条件模板', versions: [], fallback: createDraft('canvas', 'canvas').fallback } }
   if (type === RULE_VERSION) return { kind: 'version', version: { id, name: '条件模板', condition: emptyGroup(), content: emptyContent() } }
   if (type === RULE_LIST) return { kind: 'list', list: { id, name: '列表内容', paramId: '', filter: emptyGroup(), content: emptyContent(), separator: '，', prefix: '', suffix: '' } }
-  return { kind: 'fallback', fallback: { id, name: '默认模板', content: emptyContent() } }
+  return { kind: 'fallback', fallback: { id, name: '默认模板', action: 'SEND', content: emptyContent() } }
 }
 export function parseCanvasRuleNode(raw: string, type: string, id: string): CanvasRuleNode {
   const input: unknown = JSON.parse(raw)
@@ -70,12 +70,13 @@ export const updateRuleLabels = (workspace: Blockly.Workspace, params: TemplateT
         const rows = [...node.group.versions, node.group.fallback]
         const labels = rows.map((v, i) => {
           const trace = preview?.trace.find(t => t.id === v.id)
-          const status = trace ? ({ matched: '命中', unmatched: '未命中', skipped: '未执行' } as const)[trace.state] : '待预览'
+          const isFallback = i === rows.length - 1
+          const status = trace ? isFallback && trace.state === 'matched' && node.group.fallback.action === 'SKIP' ? '不发送' : ({ matched: '命中', unmatched: '未命中', skipped: '未执行' } as const)[trace.state] : '待预览'
           return `${i === rows.length - 1 ? '默认' : i + 1}. ${v.name} · ${status}`
         })
         setLabel(block, short(node.group.name, 18), 'NAME_LABEL')
-        setLabel(block, `${node.group.versions.length} 条分支 · 按顺序首条命中 · 默认兜底`, 'RULE_LABEL')
-        setLabel(block, preview?.matchedName ? '本次命中：' + preview.matchedName : '双击集中编辑条件与正文', 'BODY_LABEL')
+        setLabel(block, `${node.group.versions.length} 条分支 · 按顺序首条命中 · ${node.group.fallback.action === 'SKIP' ? '未命中不发送' : '默认消息兜底'}`, 'RULE_LABEL')
+        setLabel(block, preview?.skipSend ? '本次结果：不发送' : preview?.matchedName ? '本次命中：' + preview.matchedName : '双击集中编辑条件与正文', 'BODY_LABEL')
         const old = block.inputList.filter(input => input.name.startsWith('BRANCH_'))
         if (old.length !== rows.length) {
           old.forEach(input => block.removeInput(input.name))
@@ -86,10 +87,10 @@ export const updateRuleLabels = (workspace: Blockly.Workspace, params: TemplateT
         continue
       }
       const item = node.kind === 'version' ? node.version : node.kind === 'fallback' ? node.fallback : node.list
-      const rule = node.kind === 'version' ? groupSummary(node.version.condition, params) : node.kind === 'fallback' ? '其他条件均未命中时使用' : node.list.filter.rules.length ? groupSummary(node.list.filter, params) : '保留全部列表项'
+      const rule = node.kind === 'version' ? groupSummary(node.version.condition, params) : node.kind === 'fallback' ? node.fallback.action === 'SKIP' ? '其他条件均未命中时不发送' : '其他条件均未命中时发送默认消息' : node.list.filter.rules.length ? groupSummary(node.list.filter, params) : '保留全部列表项'
       setLabel(block, short(item.name, 18), 'NAME_LABEL')
       setLabel(block, short(rule), 'RULE_LABEL')
-      setLabel(block, short(item.content.text.replace(/\n/g, ' ')) || '正文尚未填写', 'BODY_LABEL')
+      setLabel(block, node.kind === 'fallback' && node.fallback.action === 'SKIP' ? '本分支不发送消息' : short(item.content.text.replace(/\n/g, ' ')) || '正文尚未填写', 'BODY_LABEL')
       block.setTooltip(`${item.name}\n${rule}\n${item.content.text}\n双击编辑`)
     } catch { setLabel(block, '配置异常，请检查草稿', 'RULE_LABEL') }
   }

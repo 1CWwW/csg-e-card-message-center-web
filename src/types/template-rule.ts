@@ -36,6 +36,7 @@ export interface RuleBinding {
 export interface RuleMessageContent { text: string; bindings: RuleBinding[] }
 export interface RuleMessageVersion { id: string; name: string; condition: TemplateRuleGroup; content: RuleMessageContent }
 export interface RuleMessageList { id: string; name: string; paramId: string; filter: TemplateRuleGroup; content: RuleMessageContent; separator: string; prefix: string; suffix: string }
+export interface RuleFallback { id: string; name: string; action?: 'SEND' | 'SKIP'; content: RuleMessageContent }
 /** 前端规则模板草稿，独立于现有 Blockly 接口。 */
 export interface RuleTemplateDraft {
   editorType: 'RULE_VERSIONS'
@@ -43,11 +44,11 @@ export interface RuleTemplateDraft {
   templateId: string
   sceneId: string
   versions: RuleMessageVersion[]
-  fallback: { id: string; name: string; content: RuleMessageContent }
+  fallback: RuleFallback
   lists: RuleMessageList[]
 }
 export interface RuleMatchTrace { id: string; name: string; state: 'matched' | 'unmatched' | 'skipped'; reasons: string[] }
-export interface RuleTemplatePreview { matchedId: string; matchedName: string; content: string; trace: RuleMatchTrace[]; errors: string[] }
+export interface RuleTemplatePreview { matchedId: string; matchedName: string; content: string; skipSend?: boolean; trace: RuleMatchTrace[]; errors: string[] }
 export type CanvasRuleNode =
   | { kind: 'group'; group: { name: string; versions: RuleMessageVersion[]; fallback: RuleTemplateDraft['fallback'] } }
   | { kind: 'version'; version: RuleMessageVersion }

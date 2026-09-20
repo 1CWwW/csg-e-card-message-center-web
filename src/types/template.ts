@@ -121,6 +121,7 @@ export interface TemplatePreviewResult {
   warnings: string[]
   matchedId?: string
   matchedName?: string
+  skipSend?: boolean
   content?: string
   trace?: RuleMatchTrace[]
   errors?: string[]
